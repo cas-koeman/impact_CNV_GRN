@@ -91,6 +91,7 @@ class DataLoader:
             pruning_suffix = "pruned" if pruning else "unpruned"
             paths['output'] = os.path.join(paths['output'], pruning_suffix)  # Update output path for pruning
             os.makedirs(paths['output'], exist_ok=True)  # Ensure the pruned/unpruned directory exists
+            logger.debug(f"Updated output path for pruning: {paths['output']}")  # Debugging
 
         suffix = f"{cell_type}_" if cell_type else ""
 
@@ -109,6 +110,8 @@ class DataLoader:
             'pyscenic_output': os.path.join(paths['output'], f'{suffix}pyscenic_output.loom'),
             'aucell_mtx': os.path.join(paths['output'], f'{suffix}auc.csv')
         })
+
+        logger.debug(f"Generated paths: {paths}")  # Debugging
         return paths
 
     def read_expression_data(self):
@@ -574,9 +577,14 @@ class WorkflowManager:
         """
         Run complete PySCENIC workflow with visualizations.
         """
-        logger.info("Starting PySCENIC workflow for dataset %s, sample %s, cell type %s", self.dataset_id, self.sample_id, self.cell_type)
+        logger.info("Starting PySCENIC workflow for dataset %s, sample %s, cell type %s", self.dataset_id,
+                    self.sample_id, self.cell_type)
 
+        # Initialize DataLoader with pruning flag
         data_loader = DataLoader(self.base_folder, self.dataset_id, self.sample_id, self.cell_type, self.pruning)
+        logger.debug(f"Generated paths: {data_loader.paths}")  # Debugging: Verify paths
+
+        # Load AnnData object
         adata = sc.read_h5ad(data_loader.paths['anndata'])
 
         # Subset the data based on cell_type
@@ -594,9 +602,6 @@ class WorkflowManager:
             logger.info("No cell type specified. Using the entire dataset.")
 
         logger.info("Starting PySCENIC workflow for: %s", self.cell_type or 'whole dataset')
-
-        # Update paths for specific cell type
-        data_loader.paths = data_loader.get_analysis_paths(self.base_folder, self.dataset_id, self.sample_id, self.cell_type)
 
         # Step 1: Create the loom file
         logger.info("Step 1: Creating the desired loom file")
@@ -663,28 +668,28 @@ def parse_arguments():
     parser.add_argument("--cell_type", type=str, default=None,
                         help="Specific cell type to subset (e.g., 'Tumor' or 'Non-Tumor'). Defaults to all cells.")
     parser.add_argument("--prune", type=str, default=None,
-                        help="Whether to use pruning during GRN inference. Options: 'true', 'false', or None (default).")
+                        help="Whether to use pruning during GRN inference. Options: 'True', 'False', or None (default).")
 
     args = parser.parse_args()
 
     # Handle the prune flag
     if args.prune is not None:
-        args.prune = args.prune.lower()
-        if args.prune == "True":
+        args.prune = args.prune.lower()  # Convert to lowercase for case-insensitive comparison
+        if args.prune == "true":
             args.prune = True
-        elif args.prune == "False":
+        elif args.prune == "false":
             args.prune = False
-        elif args.prune == "None":  # Convert "None" to Python None
+        elif args.prune == "none":  # Convert "None" to Python None
             args.prune = None
         else:
-            raise ValueError("Invalid value for --prune. Must be 'true', 'false', or 'None'.")
+            raise ValueError("Invalid value for --prune. Must be 'True', 'False', or 'None'.")
 
     # Handle the cell_type flag
     if args.cell_type is not None:
         args.cell_type = args.cell_type.lower()
-        if args.cell_type == "None":  # Convert "None" to Python None
+        if args.cell_type == "none":  # Convert "None" to Python None
             args.cell_type = None
-        elif args.cell_type not in ["Tumor", "Non-Tumor"]:
+        elif args.cell_type not in ["tumor", "non-tumor"]:
             raise ValueError("Invalid value for --cell_type. Must be 'Tumor', 'Non-Tumor', or 'None'.")
 
     return args

@@ -20,7 +20,7 @@ SAMPLE_ID="C3L-00004-T1_CPT0001540013/"
 
 # Define the values for CELL_TYPE and PRUNE to loop over
 CELL_TYPES=("None" "Tumor" "Non-Tumor")  # Use "None" instead of ""
-PRUNE_FLAGS=("None" "true" "false")      # Use "None" instead of ""
+PRUNE_FLAGS=("None" "True" "False")      # Use "None" instead of ""
 
 # Loop over all combinations of CELL_TYPE and PRUNE
 for CELL_TYPE in "${CELL_TYPES[@]}"; do
