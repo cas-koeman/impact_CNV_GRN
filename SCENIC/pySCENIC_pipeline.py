@@ -643,7 +643,7 @@ def parse_arguments():
     parser.add_argument("sample_id", type=str, help="Identifier for the sample.")
 
     # Optional arguments
-    parser.add_argument("--cell_type", type=str, default="",
+    parser.add_argument("--cell_type", type=str, default=None,
                         help="Specific cell type to subset (e.g., 'Tumor' or 'Non-Tumor'). Defaults to all cells.")
     parser.add_argument("--prune", type=str, default=None,
                         help="Whether to use pruning during GRN inference. Options: 'true', 'false', or None (default).")
@@ -653,12 +653,22 @@ def parse_arguments():
     # Handle the prune flag
     if args.prune is not None:
         args.prune = args.prune.lower()
-        if args.prune == 'true':
+        if args.prune == "true":
             args.prune = True
-        elif args.prune == 'false':
+        elif args.prune == "false":
             args.prune = False
-        else:
+        elif args.prune == "none":  # Convert "None" to Python None
             args.prune = None
+        else:
+            raise ValueError("Invalid value for --prune. Must be 'true', 'false', or 'None'.")
+
+    # Handle the cell_type flag
+    if args.cell_type is not None:
+        args.cell_type = args.cell_type.lower()
+        if args.cell_type == "none":  # Convert "None" to Python None
+            args.cell_type = None
+        elif args.cell_type not in ["tumor", "non-tumor"]:
+            raise ValueError("Invalid value for --cell_type. Must be 'Tumor', 'Non-Tumor', or 'None'.")
 
     return args
 

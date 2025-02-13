@@ -19,8 +19,8 @@ DATASET_ID="ccRCC_GBM/"
 SAMPLE_ID="C3L-00004-T1_CPT0001540013/"
 
 # Define the values for CELL_TYPE and PRUNE to loop over
-CELL_TYPES=("" "Tumor" "Non-Tumor")  # Add or remove values as needed
-PRUNE_FLAGS=("" "true" "false")      # Add or remove values as needed
+CELL_TYPES=("None" "Tumor" "Non-Tumor")  # Use "None" instead of ""
+PRUNE_FLAGS=("None" "true" "false")      # Use "None" instead of ""
 
 # Loop over all combinations of CELL_TYPE and PRUNE
 for CELL_TYPE in "${CELL_TYPES[@]}"; do
@@ -28,7 +28,7 @@ for CELL_TYPE in "${CELL_TYPES[@]}"; do
         echo "Running pipeline with CELL_TYPE=$CELL_TYPE and PRUNE=$PRUNE"
 
         # Run the Python script with the current combination of flags
-        python pySCENIC_pipeline.py "$BASE_FOLDER" "$DATASET_ID" "$SAMPLE_ID" "$CELL_TYPE" "$PRUNE"
+        python pySCENIC_pipeline.py "$BASE_FOLDER" "$DATASET_ID" "$SAMPLE_ID" --cell_type "$CELL_TYPE" --prune "$PRUNE"
 
         # Check if the Python script executed successfully
         if [[ $? -eq 0 ]]; then
