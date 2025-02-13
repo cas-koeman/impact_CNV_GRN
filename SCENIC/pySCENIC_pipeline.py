@@ -73,11 +73,12 @@ class DataLoader:
             raise ValueError("cell_type must be 'Tumor', 'Non-Tumor', or None")
 
         # Define base paths
+        base_output = os.path.join(base_folder, dataset_id, sample_id)  # Base output directory
         paths = {
             'base': base_folder,
             'databases': os.path.join(base_folder, "databases"),
             'raw_data': os.path.join(base_folder, dataset_id, "raw_data"),
-            'output': os.path.join(base_folder, dataset_id, sample_id),
+            'output': base_output,  # Base output directory (not affected by pruning yet)
             'figures': os.path.join(base_folder, dataset_id, sample_id, "figures")
         }
 
@@ -88,7 +89,8 @@ class DataLoader:
         # Adjust output path for pruning if applicable
         if pruning is not None:
             pruning_suffix = "pruned" if pruning else "unpruned"
-            paths['output'] = os.path.join(paths['output'], pruning_suffix)
+            paths['output'] = os.path.join(paths['output'], pruning_suffix)  # Update output path for pruning
+            os.makedirs(paths['output'], exist_ok=True)  # Ensure the pruned/unpruned directory exists
 
         suffix = f"{cell_type}_" if cell_type else ""
 
@@ -100,7 +102,7 @@ class DataLoader:
             'raw_matrix': os.path.join(paths['raw_data'],
                                        'C3L-00004-T1_CPT0001540013_snRNA_ccRCC/outs/raw_feature_bc_matrix/'),
             'metadata': os.path.join(paths['raw_data'], 'GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz'),
-            'anndata': os.path.join(paths['output'], f'{suffix}anndata.h5ad'),
+            'anndata': os.path.join(base_output, 'anndata.h5ad'),  # Always in the base output directory
             'filtered_loom': os.path.join(paths['output'], f'{suffix}filtered_scenic.loom'),
             'adjacencies': os.path.join(paths['output'], f'{suffix}adjacencies.csv'),
             'regulons': os.path.join(paths['output'], f'{suffix}reg.csv'),
@@ -434,7 +436,7 @@ class ResultVisualizer:
 
         # Generate and save UMAP plots
         sc.pl.umap(adata, color='cell_type.harmonized.cancer', title=f'Cell Type ({cell_type})',
-                   save=f'_{cell_type}_umap.pdf')
+                   save=f'_{cell_type}.pdf')
 
         return pd.DataFrame(umap_result, columns=['UMAP1', 'UMAP2'])
 
@@ -539,18 +541,33 @@ class WorkflowManager:
             AnnData: Annotated data object after preprocessing.
         """
         logger.info("Starting preprocessing workflow")
+
+        # Step 1: Load expression data
+        logger.info("Step 1: Loading expression data")
         data_loader = DataLoader(self.base_folder, self.dataset_id, self.sample_id, self.cell_type, self.pruning)
         adata = data_loader.read_expression_data()
 
+        # Update paths for specific cell type
+        data_loader.paths = data_loader.get_analysis_paths(self.base_folder, self.dataset_id, self.sample_id,
+                                                           self.cell_type)
+
+        # Step 2: Filter and preprocess data
+        logger.info("Step 2: Filtering and preprocessing data")
         data_preprocessor = DataPreprocessor(adata, data_loader.paths)
         adata = data_preprocessor.filter_data()
         adata = data_preprocessor.add_metadata("ccRCC_C3L-00004-T1_", "CPT0001540013")
         adata = data_preprocessor.preprocess_data()
 
+        # Step 3: Cluster data and generate UMAP visualization
+        logger.info("Step 3: Clustering data and generating UMAP visualization")
         cluster_visualizer = ClusterVisualizer(adata, data_loader.paths)
         adata = cluster_visualizer.cluster_and_umap(resolution=0.4)
 
-        logger.info("Preprocessing complete. Results saved to %s", data_loader.paths['anndata'])
+        # Step 4: Save results
+        logger.info("Step 4: Saving results to %s", data_loader.paths['anndata'])
+        adata.write(data_loader.paths['anndata'])
+
+        logger.info("Preprocessing workflow complete")
         return adata
 
     def run_pyscenic_workflow(self):
@@ -653,11 +670,11 @@ def parse_arguments():
     # Handle the prune flag
     if args.prune is not None:
         args.prune = args.prune.lower()
-        if args.prune == "true":
+        if args.prune == "True":
             args.prune = True
-        elif args.prune == "false":
+        elif args.prune == "False":
             args.prune = False
-        elif args.prune == "none":  # Convert "None" to Python None
+        elif args.prune == "None":  # Convert "None" to Python None
             args.prune = None
         else:
             raise ValueError("Invalid value for --prune. Must be 'true', 'false', or 'None'.")
@@ -665,9 +682,9 @@ def parse_arguments():
     # Handle the cell_type flag
     if args.cell_type is not None:
         args.cell_type = args.cell_type.lower()
-        if args.cell_type == "none":  # Convert "None" to Python None
+        if args.cell_type == "None":  # Convert "None" to Python None
             args.cell_type = None
-        elif args.cell_type not in ["tumor", "non-tumor"]:
+        elif args.cell_type not in ["Tumor", "Non-Tumor"]:
             raise ValueError("Invalid value for --cell_type. Must be 'Tumor', 'Non-Tumor', or 'None'.")
 
     return args
@@ -687,11 +704,17 @@ def main():
     logger.info(f"Cell type: {args.cell_type}")
     logger.info(f"Prune flag: {args.prune}")
 
-    # Run the preprocessing workflow
+    # Initialize workflow manager
     workflow_manager = WorkflowManager(args.base_folder, args.dataset_id, args.sample_id, args.cell_type, args.prune)
-    workflow_manager.preprocessing_workflow()
 
-    # Run the PySCENIC workflow
+    # Run preprocessing only if both cell_type and pruning are None
+    if args.cell_type is None and args.prune is None:
+        logger.info("Running preprocessing workflow as cell_type and pruning are None.")
+        workflow_manager.preprocessing_workflow()
+    else:
+        logger.info("Skipping preprocessing workflow as cell_type or pruning is set.")
+
+    # Always run PySCENIC workflow
     workflow_manager.run_pyscenic_workflow()
 
 
