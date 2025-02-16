@@ -73,10 +73,13 @@ prepare_infercnv_data <- function(
 run_infercnv_analysis <- function(
     input_matrix, input_annotations, input_gene_annotation,
     output_dir, ref_groups) {
+
   # Load input matrix
   message("Loading input matrix...")
   raw_counts_matrix <- as.matrix(read.table(input_matrix, header = TRUE, row.names = 1, sep = "\t"))
-  if (!is.numeric(raw_counts_matrix)) stop("Error: Input matrix must contain numeric data")
+  if (!is.numeric(raw_counts_matrix)) {
+    stop("Error: Input matrix must contain numeric data")
+  }
 
   # Load annotations
   message("Loading annotations...")
@@ -117,6 +120,25 @@ run_infercnv_analysis <- function(
     num_threads = 4
   )
 
+  # Extract tumor subclusters
+  message("Extracting tumor subclusters...")
+  subclusters_tumor <- infercnv_obj@tumor_subclusters$subclusters$cancer
+  cell_names <- colnames(infercnv_obj@expr.data)
+
+  # Initialize clustering_infercnv as NULL
+  clustering_infercnv <- NULL
+
+  # Iterate through tumor subclusters and create a data frame
+  for (subc in names(subclusters_tumor)) {
+    clustering_infercnv <- rbind(
+      clustering_infercnv,
+      data.frame(
+        cell = cell_names[subclusters_tumor[[subc]]],
+        infercnv = subc
+      )
+    )
+  }
+
   # Post-process results
   message("Post-processing results...")
   res_inferCNV <- infercnv_obj@expr.data
@@ -126,7 +148,17 @@ run_infercnv_analysis <- function(
   # Save processed results
   message("Saving processed results...")
   saveRDS(res_inferCNV, file = file.path(output_dir, "processed_infercnv_results.rds"))
+
+  # Save subclustering results
+  saveRDS(clustering_infercnv, file = file.path(output_dir, "tumor_subclusters.rds"))
+
   message("InferCNV analysis complete. Results saved in: ", output_dir)
+
+  # Return the clustering results and processed data
+  return(list(
+    clustering_results = clustering_infercnv,
+    processed_data = res_inferCNV
+  ))
 }
 
 # Function 3: Main pipeline
@@ -150,7 +182,7 @@ run_infercnv_pipeline <- function(
   # Define input files for inferCNV
   input_matrix <- file.path(output_dir, paste0(dataset_id_prefix, aliquot, "_expression_matrix.txt"))
   input_annotations <- file.path(output_dir, paste0(dataset_id_prefix, aliquot, "_annotations.txt"))
-  input_gene_annotation <- "path/to/gene_annotation_file.txt"  # Replace with actual path
+  input_gene_annotation <- "/work/project/ladcol_020/CNV_calling/inferCNV/hg38_gencode_v27.txt"
 
   # Step 2: Run inferCNV analysis
   message("Starting inferCNV analysis...")

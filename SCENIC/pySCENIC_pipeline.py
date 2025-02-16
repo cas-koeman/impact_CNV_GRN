@@ -462,13 +462,14 @@ class ResultVisualizer:
 
         # Normalize and clean data
         mean_auc_by_cell_type = mean_auc_by_cell_type.replace([float('inf'), float('-inf')], pd.NA).dropna(how='all')
-        normalized_scores = (mean_auc_by_cell_type - mean_auc_by_cell_type.min()) / (
-                    mean_auc_by_cell_type.max() - mean_auc_by_cell_type.min())
+
+        # Z-score normalization
+        normalized_scores = (mean_auc_by_cell_type - mean_auc_by_cell_type.mean()) / mean_auc_by_cell_type.std()
 
         # Create heatmap with clustering
         g = sns.clustermap(normalized_scores, figsize=[12, 6.5], cmap=plt.cm.Reds, xticklabels=False, yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
-                           cbar_kws={'location': 'right', 'label': 'Normalized Regulon Activity'},
+                           cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
                            dendrogram_ratio=0.1, cbar_pos=(0.85, .3, .015, 0.4))
 
         # Customize heatmap appearance
@@ -494,15 +495,15 @@ class ResultVisualizer:
         top_regulons = aucell_mtx.mean(axis=0).nlargest(num_top_regulons)
         selected_aucell_mtx = aucell_mtx[top_regulons.index]
 
-        # Normalize data
-        scaled_aucell_mtx = (selected_aucell_mtx - selected_aucell_mtx.min()) / (
-                    selected_aucell_mtx.max() - selected_aucell_mtx.min())
+        # Z-score normalization
+        scaled_aucell_mtx = (selected_aucell_mtx - selected_aucell_mtx.mean()) / selected_aucell_mtx.std()
         scaled_aucell_mtx = scaled_aucell_mtx.replace([float('inf'), float('-inf')], pd.NA).dropna(how='all')
 
         # Create heatmap with clustering
-        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.Reds, xticklabels=False, yticklabels=True,
+        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.Reds, xticklabels=False,
+                           yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
-                           cbar_kws={'location': 'right', 'label': 'Normalized Regulon Activity'},
+                           cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
                            dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4))
 
         # Customize heatmap appearance
@@ -686,10 +687,14 @@ def parse_arguments():
 
     # Handle the cell_type flag
     if args.cell_type is not None:
-        args.cell_type = args.cell_type.lower()
+        args.cell_type = args.cell_type.lower()  # Convert to lowercase for case-insensitive comparison
         if args.cell_type == "none":  # Convert "None" to Python None
             args.cell_type = None
-        elif args.cell_type not in ["tumor", "non-tumor"]:
+        elif args.cell_type == "tumor":  # Standardize to "Tumor"
+            args.cell_type = "Tumor"
+        elif args.cell_type == "non-tumor":  # Standardize to "Non-Tumor"
+            args.cell_type = "Non-Tumor"
+        else:
             raise ValueError("Invalid value for --cell_type. Must be 'Tumor', 'Non-Tumor', or 'None'.")
 
     return args
