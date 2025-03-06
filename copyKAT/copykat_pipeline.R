@@ -10,7 +10,7 @@ library(RColorBrewer)
 
 # Function 1: Integrated CopyKAT analysis
 integrated_copykat <- function(data.path, metadata.file, dataset_id_prefix,
-                             aliquot = "CPT0001540013", genome = "hg20",
+                             aliquot, genome = "hg20",
                              n.cores = 4, output_dir = ".") {
   # Set seed for reproducibility
   set.seed(42)

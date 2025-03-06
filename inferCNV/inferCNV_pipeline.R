@@ -8,8 +8,8 @@ library(infercnv)
 # Function 1: Prepare data for inferCNV analysis
 prepare_infercnv_data <- function(
     data.path, metadata.file, dataset_id_prefix,
-    aliquot = "CPT0001540013", min.genes = 200,
-    min.cells = 3, output_dir = ".") {
+    aliquot = aliquot, min.genes = 200,
+    min.cells = 3, output_dir) {
   # Set seed for reproducibility
   set.seed(42)
 
@@ -164,7 +164,7 @@ run_infercnv_analysis <- function(
 # Function 3: Main pipeline
 run_infercnv_pipeline <- function(
     data.path, metadata.file, dataset_id_prefix,
-    aliquot = "CPT0001540013", output_dir = ".") {
+    aliquot = aliquot, output_dir = ".") {
   # Step 1: Prepare data
   message("Starting data preparation...")
   prepared_data <- prepare_infercnv_data(
@@ -207,13 +207,15 @@ if (!interactive()) {
   data.path <- args[1]
   metadata.file <- args[2]
   dataset_id_prefix <- args[3]
-  output_dir <- args[4]
+  aliquot <- args[4]
+  output_dir <- args[5]
 
   # Run the pipeline
   run_infercnv_pipeline(
     data.path = data.path,
     metadata.file = metadata.file,
     dataset_id_prefix = dataset_id_prefix,
+    aliquot = aliquot,
     output_dir = output_dir
   )
 }
