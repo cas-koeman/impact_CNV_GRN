@@ -4,22 +4,27 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib_venn import venn3
 from scipy.stats import zscore, chi2_contingency
-import matplotlib.patches as patches
 import os
+from matplotlib import colors as mcolors
 from statsmodels.graphics.mosaicplot import mosaic
 
 
 class RegfileComparison:
-    def __init__(self, file_path1, condition1, dataset_id, aliquot, file_path2=None, file_path3=None, condition2=None,
-                 condition3=None):
-        self.file_path1 = file_path1
-        self.file_path2 = file_path2
-        self.file_path3 = file_path3
+    def __init__(self, dataset_id, aliquot, condition1="whole_dataset", condition2="Tumor", condition3="Non-Tumor",
+                 base_dir="/work/project/ladcol_020"):
+        self.dataset_id = dataset_id
+        self.aliquot = aliquot
         self.condition1 = condition1
         self.condition2 = condition2
         self.condition3 = condition3
-        self.dataset_id = dataset_id
-        self.aliquot = aliquot
+        self.base_dir = base_dir
+
+        # Auto-generate file paths
+        scenic_dir = os.path.join(base_dir, "scGRNi/RNA/SCENIC", dataset_id, aliquot)
+        self.file_path1 = os.path.join(scenic_dir, "reg.csv")
+        self.file_path2 = os.path.join(scenic_dir, f"{condition2}_reg.csv")
+        self.file_path3 = os.path.join(scenic_dir, f"{condition3}_reg.csv")
+
         self.output_dir = os.path.join(dataset_id, aliquot)
 
         # Data containers
@@ -38,27 +43,44 @@ class RegfileComparison:
 
     def load_data(self):
         print("Loading data...")
-
         # Load dataset 1 (always required)
-        self.df1 = pd.read_csv(self.file_path1, header=1).iloc[1:].reset_index(drop=True)
-        self.df1 = self.df1.rename(columns={'Unnamed: 0': 'TF', 'Unnamed: 1': 'MotifID'})
-        print(f"Loaded {self.condition1} with {len(self.df1)} rows.")
+        if os.path.exists(self.file_path1):
+            self.df1 = pd.read_csv(self.file_path1, header=1).iloc[1:].reset_index(drop=True)
+            self.df1 = self.df1.rename(columns={'Unnamed: 0': 'TF', 'Unnamed: 1': 'MotifID'})
+            print(f"Loaded {self.condition1} with {len(self.df1)} rows from {self.file_path1}")
+        else:
+            print(f"Warning: File not found for {self.condition1} at {self.file_path1}")
 
-        # Load dataset 2 if provided
-        if self.file_path2:
+        # Load dataset 2 if it exists
+        if os.path.exists(self.file_path2):
             self.df2 = pd.read_csv(self.file_path2, header=1).iloc[1:].reset_index(drop=True)
             self.df2 = self.df2.rename(columns={'Unnamed: 0': 'TF', 'Unnamed: 1': 'MotifID'})
-            print(f"Loaded {self.condition2} with {len(self.df2)} rows.")
+            print(f"Loaded {self.condition2} with {len(self.df2)} rows from {self.file_path2}")
         else:
-            print(f"No data provided for {self.condition2}. Skipping...")
+            print(f"Warning: File not found for {self.condition2} at {self.file_path2}")
 
-        # Load dataset 3 if provided
-        if self.file_path3:
+        # Load dataset 3 if it exists
+        if os.path.exists(self.file_path3):
             self.df3 = pd.read_csv(self.file_path3, header=1).iloc[1:].reset_index(drop=True)
             self.df3 = self.df3.rename(columns={'Unnamed: 0': 'TF', 'Unnamed: 1': 'MotifID'})
-            print(f"Loaded {self.condition3} with {len(self.df3)} rows.")
+            print(f"Loaded {self.condition3} with {len(self.df3)} rows from {self.file_path3}")
         else:
-            print(f"No data provided for {self.condition3}. Skipping...")
+            print(f"Warning: File not found for {self.condition3} at {self.file_path3}")
+
+        # Load gene expression data and apply filters
+        expression_file = os.path.join(
+            self.base_dir,
+            "integration_visualization",
+            self.dataset_id,
+            self.aliquot,
+            "raw_count_matrix.txt"
+        )
+
+        print(f"Loading and filtering gene expression data from {expression_file}...")
+        if os.path.exists(expression_file):
+            self.expression_matrix = pd.read_csv(expression_file, sep='\t', index_col=0)
+        else:
+            print(f"Warning: Expression file not found at {expression_file}")
 
         # Load gene expression data and apply filters
         print("Loading and filtering gene expression data...")
@@ -194,6 +216,12 @@ class RegfileComparison:
 
     def plot_venn_diagram(self):
         print("Plotting triple Venn diagram...")
+
+        # Extract three distinct colors from the 'coolwarm' palette
+        colors = sns.color_palette("icefire", n_colors=3)
+        color_hex = [mcolors.to_hex(c) for c in colors]  # Convert to hex using matplotlib
+        print(color_hex)
+
         tfs1 = set(self.df1['TF'])
         tfs2 = set(self.df2['TF'])
         tfs3 = set(self.df3['TF'])
@@ -202,11 +230,11 @@ class RegfileComparison:
         venn = venn3(
             [tfs1, tfs2, tfs3],
             set_labels=(f'{self.condition1} Regulons', f'{self.condition2} Regulons', f'{self.condition3} Regulons'),
-            set_colors=("#440154", "#2a788e", "#fde725")
+            set_colors=color_hex  # Apply Seaborn coolwarm colors in hex format
         )
         plt.title(f'Overlap of {self.condition1}, {self.condition2}, and {self.condition3} SCENIC Derived Regulons',
                   fontsize=12)
-        plt.savefig(os.path.join(self.output_dir, '_triple_tf_overlap_venn.png'), dpi=300)
+        plt.savefig(os.path.join(self.output_dir, 'triple_tf_overlap_venn.png'), dpi=300)
         plt.close()
 
         print("Triple Venn diagram saved as 'triple_tf_overlap_venn.png'.")
@@ -583,21 +611,24 @@ class RegfileComparison:
             print("   - Expected Frequencies:\n", pd.DataFrame(result['expected']), "\n")
 
 
+# Example usage
 if __name__ == "__main__":
-    # Hardcoded paths for now
-    file_path1 = '/work/project/ladcol_020/scGRNi/RNA/SCENIC/ccRCC_GBM/C3N-00495-T1_CPT0078510004/reg.csv'
-    file_path2 = '/work/project/ladcol_020/scGRNi/RNA/SCENIC/ccRCC_GBM/C3N-00495-T1_CPT0078510004/Tumor_reg.csv'
-    file_path3 = '/work/project/ladcol_020/scGRNi/RNA/SCENIC/ccRCC_GBM/C3N-00495-T1_CPT0078510004/Non-Tumor_reg.csv'
-
-    # Optional names
-    condition1 = "whole_dataset"
-    condition2 = "Tumor"
-    condition3 = "Non-Tumor"
+    # List of aliquots to process
+    aliquots = [
+        "C3L-00004-T1_CPT0001540013",
+        "C3N-00495-T1_CPT0078510004",
+        "C3L-00917-T1_CPT0023690004",
+        "C3L-00088-T1_CPT0000870003",
+        "C3L-00026-T1_CPT0001500003",
+        "C3L-00448-T1_CPT0010160004",
+        "C3L-01313-T1_CPT0086820004",
+        "C3L-00416-T2_CPT0010100001"
+    ]
 
     dataset_id = "ccRCC_GBM"
-    aliquot = "C3N-00495-T1_CPT0078510004" #C3N-00495-T1_CPT0078510004 #C3L-00004-T1_CPT0001540013
 
-    comparison = RegfileComparison(file_path1, condition1, dataset_id, aliquot, file_path2, file_path3,
-                                   condition2, condition3)
-
-    comparison.analyze()
+    # Process each aliquot
+    for aliquot in aliquots:
+        print(f"\nProcessing aliquot: {aliquot}")
+        comparison = RegfileComparison(dataset_id, aliquot)
+        comparison.analyze()

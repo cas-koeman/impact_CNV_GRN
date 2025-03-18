@@ -5,7 +5,7 @@ prepare_infercnv_data <- function(
   data.path,
   metadata.file,
   dataset_id_prefix,
-  aliquot,
+  sample_id,
   min.genes = 200,
   min.cells = 3,
   output_dir = "."
@@ -49,8 +49,8 @@ prepare_infercnv_data <- function(
   }
 
   metadata_filtered <- metadata[
-    metadata$Aliquot == aliquot &
-    startsWith(metadata$Merged_barcode, dataset_id_prefix),
+  startsWith(metadata$Merged_barcode, dataset_id_prefix) &
+  startsWith(metadata$GEO.sample, sample_id),
   ]
 
   print(paste("Filtered metadata dimensions:", nrow(metadata_filtered), "rows"))
@@ -58,7 +58,7 @@ prepare_infercnv_data <- function(
   # Check if any barcodes found after filtering
   if(nrow(metadata_filtered) == 0) {
     print("Warning: No entries found after filtering metadata")
-    print(paste("Unique aliquot values in metadata:", paste(unique(metadata$Aliquot), collapse=", ")))
+    print(paste("Unique sample_id values in metadata:", paste(unique(metadata$Aliquot), collapse=", ")))
     print(paste("Sample of Merged_barcode values:", paste(head(metadata$Merged_barcode), collapse=", ")))
   }
 
@@ -141,7 +141,7 @@ run_cnv_analysis <- function(
   data_path,
   metadata_file,
   dataset_prefix,
-  aliquot,
+  sample_id,
   infercnv_data_file,
   output_dir
 ) {
@@ -154,7 +154,7 @@ run_cnv_analysis <- function(
     data.path = data_path,
     metadata.file = metadata_file,
     dataset_id_prefix = dataset_prefix,
-    aliquot = aliquot,
+    sample_id = sample_id,
     output_dir = output_dir
   )
 
@@ -196,14 +196,47 @@ run_cnv_analysis <- function(
   )
 }
 
-#Example usage
+# Function to create paths automatically
+create_paths <- function(base_dir, dataset_prefix, sample_id) {
+  # Define the base paths
+  data_path <- file.path(base_dir, "datasets", "ccRCC_GBM", paste0(dataset_prefix, sample_id), paste0(sample_id, "_snRNA_ccRCC"), "outs", "raw_feature_bc_matrix")
+  metadata_file <- file.path(base_dir, "datasets", "ccRCC_GBM", "GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz")
+  infercnv_data_file <- file.path(base_dir, "CNV_calling", "inferCNV", "ccRCC_GBM", sample_id, "infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.observations.txt")
+  output_dir <- file.path(base_dir, "integration_visualization", "ccRCC_GBM", sample_id)
+
+  # Create the output directory if it doesn't exist
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  # Return a list of paths
+  return(list(
+    data_path = data_path,
+    metadata_file = metadata_file,
+    infercnv_data_file = infercnv_data_file,
+    output_dir = output_dir
+  ))
+}
+
+# Example usage
 print("Starting script execution")
+
+# Define the base directory and key inputs
+base_dir <- "/work/project/ladcol_020"
+dataset_prefix <- "ccRCC_"
+sample_id <- "C3L-00026-T1_CPT0001500003"
+
+# Generate paths automatically
+paths <- create_paths(base_dir, dataset_prefix, sample_id)
+
+# Run the CNV analysis with the generated paths
 result <- run_cnv_analysis(
-  data_path = "/work/project/ladcol_020/datasets/ccRCC_GBM/ccRCC_C3N-00495-T1_CPT0078510004/C3N-00495-T1_CPT0078510004_snRNA_ccRCC/outs/raw_feature_bc_matrix",
-  metadata_file = "/work/project/ladcol_020/datasets/ccRCC_GBM/GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz",
-  dataset_prefix = "ccRCC_",
-  aliquot = "CPT0078510004",
-  infercnv_data_file = "/work/project/ladcol_020/CNV_calling/inferCNV/ccRCC_GBM/C3N-00495-T1_CPT0078510004/infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.observations.txt",
-  output_dir = "/work/project/ladcol_020/integration_visualization/ccRCC_GBM/C3N-00495-T1_CPT0078510004"
+  data_path = paths$data_path,
+  metadata_file = paths$metadata_file,
+  dataset_prefix = dataset_prefix,
+  sample_id = sample_id,
+  infercnv_data_file = paths$infercnv_data_file,
+  output_dir = paths$output_dir
 )
+
 print("Script execution completed")

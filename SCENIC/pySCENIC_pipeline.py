@@ -487,12 +487,13 @@ class ResultVisualizer:
 
         # Z-score normalization
         normalized_scores = (mean_auc_by_cell_type - mean_auc_by_cell_type.mean()) / mean_auc_by_cell_type.std()
+        max_abs_value = np.max(np.abs(normalized_scores.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(normalized_scores, figsize=[12, 6.5], cmap=plt.cm.Reds, xticklabels=False, yticklabels=True,
+        g = sns.clustermap(normalized_scores, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False, yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
-                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4))
+                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value,  vmax=max_abs_value)
 
         # Customize heatmap appearance
         g.ax_heatmap.yaxis.tick_left()
@@ -520,13 +521,14 @@ class ResultVisualizer:
         # Z-score normalization
         scaled_aucell_mtx = (selected_aucell_mtx - selected_aucell_mtx.mean()) / selected_aucell_mtx.std()
         scaled_aucell_mtx = scaled_aucell_mtx.replace([float('inf'), float('-inf')], pd.NA).dropna(how='all')
+        max_abs_value = np.max(np.abs(scaled_aucell_mtx.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.Reds, xticklabels=False,
+        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False,
                            yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
-                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4))
+                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value, vmax=max_abs_value)
 
         # Customize heatmap appearance
         g.ax_heatmap.yaxis.tick_left()
