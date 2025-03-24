@@ -1,5 +1,10 @@
 #!/usr/bin/env Rscript
 
+#' Single-cell Copy Number Variation Analysis Pipeline
+#'
+#' This script provides functions for running CopyKAT analysis on single-cell RNA-seq data,
+#' annotating results with metadata, and visualizing copy number alterations.
+
 # Required libraries
 library(Seurat)
 library(copykat)
@@ -8,71 +13,73 @@ library(ComplexHeatmap)
 library(circlize)
 library(RColorBrewer)
 
-# Function 1: Integrated CopyKAT analysis
-integrated_copykat <- function(data.path, metadata.file, dataset_id_prefix,
-                             aliquot, genome = "hg20",
-                             n.cores = 4, output_dir = ".") {
-  # Set seed for reproducibility
-  set.seed(42)
+# Hardcoded metadata file path
+METADATA_FILE <- "/work/project/ladcol_020/datasets/ccRCC_GBM/GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz"
 
-  # Read and process raw data
+# Function 1: Integrated CopyKAT analysis ----
+#' Run integrated CopyKAT analysis with metadata filtering
+#'
+#' @param data.path Path to 10X Genomics data directory
+#' @param dataset_id Dataset identifier for filtering
+#' @param sample_id Sample identifier for filtering
+#' @param genome Reference genome (default: "hg20")
+#' @param n.cores Number of cores for parallel processing (default: 4)
+#' @param output_dir Output directory (default: ".")
+#' @return CopyKAT result object
+integrated_copykat <- function(data.path, dataset_id,
+                             sample_id, genome = "hg20",
+                             n.cores = 4, output_dir = ".") {
+  set.seed(42)  # For reproducibility
+
+  # Read and process data
   message("Reading 10X data...")
   raw <- Read10X(data.dir = data.path)
   seurat_obj <- CreateSeuratObject(
     counts = raw,
-    project = aliquot,
+    project = sample_id,
     min.cells = 3,
     min.features = 200
   )
   message("Initial dimensions: ", dim(seurat_obj)[1], " genes x ", dim(seurat_obj)[2], " cells")
 
-  # Process metadata - handling gzipped files
-  message("Processing metadata...")
-  if (is.character(metadata.file)) {
-    if (endsWith(metadata.file, ".gz")) {
-      metadata <- read.table(gzfile(metadata.file), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-    } else {
-      metadata <- read.table(metadata.file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-    }
+  # Process metadata
+  message("Processing metadata from: ", METADATA_FILE)
+  metadata <- if (endsWith(METADATA_FILE, ".gz")) {
+    read.table(gzfile(METADATA_FILE), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   } else {
-    metadata <- metadata.file
+    read.table(METADATA_FILE, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   }
 
-  # Filter metadata based on Aliquot and Merged_barcode containing dataset prefix
+  # Filter metadata and Seurat object
   metadata_filtered <- metadata[
-    metadata$Aliquot == aliquot &
-    grepl(dataset_id_prefix, metadata$Merged_barcode),
+    grepl(paste0("^", sample_id), metadata$GEO.sample) &
+      grepl(paste0("^", dataset_id), metadata$Merged_barcode),
   ]
 
-  # Get matching barcodes and filter Seurat object
-  matching_barcodes <- metadata_filtered$Barcode[metadata_filtered$Barcode %in% colnames(seurat_obj)]
+  matching_barcodes <- intersect(metadata_filtered$Barcode, colnames(seurat_obj))
   seurat_filtered <- subset(seurat_obj, cells = matching_barcodes)
+  seurat_filtered$cell_type.harmonized.cancer <- metadata_filtered$cell_type.harmonized.cancer[
+    match(matching_barcodes, metadata_filtered$Barcode)
+  ]
 
-  # Add cell type annotations
-  metadata_filtered <- metadata_filtered[match(matching_barcodes, metadata_filtered$Barcode), ]
-  seurat_filtered$cell_type.harmonized.cancer <- metadata_filtered$cell_type.harmonized.cancer
-
-  message("After filtering - dimensions: ", dim(seurat_filtered)[1], " genes x ",
+  message("Filtered dimensions: ", dim(seurat_filtered)[1], " genes x ",
           dim(seurat_filtered)[2], " cells")
 
-  # Get normal cell barcodes (cells that are not labeled as 'Tumor')
+  # Identify normal cells
   normal_cell_barcodes <- colnames(seurat_filtered)[
     seurat_filtered$cell_type.harmonized.cancer != "Tumor"
   ]
-  message("Number of normal cells identified: ", length(normal_cell_barcodes))
+  message("Normal cells identified: ", length(normal_cell_barcodes))
 
-  # Extract raw count matrix for CopyKat
-  exp.rawdata <- as.matrix(seurat_filtered@assays$RNA@counts)
-
-  # Run CopyKat analysis with normal cells specified
-  message("Running CopyKat analysis...")
-  copykat.result <- copykat(
-    rawmat = exp.rawdata,
+  # Run CopyKAT
+  message("Running CopyKAT analysis...")
+  copykat(
+    rawmat = as.matrix(seurat_filtered@assays$RNA@counts),
     id.type = "S",
     ngene.chr = 5,
     win.size = 25,
     KS.cut = 0.1,
-    sam.name = file.path(output_dir, aliquot),
+    sam.name = file.path(output_dir, sample_id),
     distance = "euclidean",
     norm.cell.names = normal_cell_barcodes,
     output.seg = TRUE,
@@ -80,106 +87,92 @@ integrated_copykat <- function(data.path, metadata.file, dataset_id_prefix,
     genome = genome,
     n.cores = n.cores
   )
-
-  return(copykat.result)
 }
 
-# Function 2: Annotate predictions with metadata
-annotate_predictions_with_metadata <- function(metadata_file, prediction_file, output_file,
-                                             dataset_id_prefix, aliquot) {
-  # Load the metadata file (handling gzipped files)
-  if (endsWith(metadata_file, ".gz")) {
-    metadata <- read.table(gzfile(metadata_file), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+# Function 2: Annotate predictions ----
+#' Annotate CopyKAT predictions with metadata
+#'
+#' @param prediction_file Path to CopyKAT prediction file
+#' @param output_file Path for output file
+#' @param dataset_id Dataset identifier for filtering
+#' @param sample_id Sample identifier for filtering
+#' @return Annotated data.frame
+annotate_predictions_with_metadata <- function(prediction_file, output_file,
+                                             dataset_id, sample_id) {
+  # Load data
+  message("Loading metadata from: ", METADATA_FILE)
+  metadata <- if (endsWith(METADATA_FILE, ".gz")) {
+    read.table(gzfile(METADATA_FILE), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   } else {
-    metadata <- read.table(metadata_file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+    read.table(METADATA_FILE, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   }
 
-  # Load the prediction file
   prediction <- read.table(prediction_file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
 
-  # Filter metadata for Aliquot and Merged_barcode containing dataset prefix
+  # Filter metadata
   filtered_metadata <- metadata[
-    metadata$Aliquot == aliquot &
-    grepl(dataset_id_prefix, metadata$Merged_barcode),
+    grepl(paste0("^", sample_id), metadata$GEO.sample) &
+      grepl(paste0("^", dataset_id), metadata$Merged_barcode),
   ]
 
-  # Initialize vectors to hold Sample_type and Cell_Type
-  sample_types <- vector("character", length = nrow(prediction))
-  cell_types <- vector("character", length = nrow(prediction))
+  # Annotate predictions
+  annotation_data <- merge(prediction, filtered_metadata,
+                          by.x = "cell.names", by.y = "Barcode",
+                          all.x = TRUE)
 
-  # Loop through each barcode in the prediction file
-  for (i in seq_len(nrow(prediction))) {
-    barcode <- prediction$cell.names[i]
+  # Select and rename columns
+  result <- annotation_data[, c("cell.names", "copykat.pred",
+                               "Sample_type", "cell_type.harmonized.cancer")]
+  names(result)[4] <- "Cell_Type"
 
-    # Match barcode with filtered metadata
-    matched_row <- filtered_metadata[filtered_metadata$Barcode == barcode, ]
-
-    # Assign Sample_type and Cell_Type if a match is found
-    if (nrow(matched_row) > 0) {
-      sample_types[i] <- matched_row$Sample_type
-      cell_types[i] <- matched_row$cell_type.harmonized.cancer
-    } else {
-      sample_types[i] <- NA
-      cell_types[i] <- NA
-    }
-  }
-
-  # Add Sample_type and Cell_Type to the prediction file
-  prediction$Sample_type <- sample_types
-  prediction$Cell_Type <- cell_types
-
-  # Select relevant columns for the output
-  output <- prediction[, c("cell.names", "copykat.pred", "Sample_type", "Cell_Type")]
-
-  # Save the output file
-  write.table(output, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
-
-  # Return the output data for inspection
-  return(output)
+  write.table(result, output_file, sep = "\t", row.names = FALSE, quote = FALSE)
+  return(result)
 }
 
-# Function 3: Create CNV heatmap
+# Function 3: CNV Heatmap ----
+#' Create CNV heatmap with annotations
+#'
+#' @param cna_file Path to CNA results file
+#' @param ploidy_file Path to ploidy annotation file
+#' @param output_jpeg Path for output JPEG file
+#' @return Invisible NULL
 create_cnv_heatmap <- function(cna_file, ploidy_file, output_jpeg) {
-  # Read CNA and Ploidy data
-  cna_data <- read.table(cna_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE)
-  ploidy_data <- read.table(ploidy_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE, check.names = FALSE)
+  # Read data
+  cna_data <- read.table(cna_file, header = TRUE, sep = "\t",
+                        stringsAsFactors = FALSE, check.names = FALSE)
+  ploidy_data <- read.table(ploidy_file, header = TRUE, sep = "\t",
+                           stringsAsFactors = FALSE, check.names = FALSE)
 
-  # Subset CNA data and extract cell names
+  # Prepare data
   cna_data_subset <- cna_data[, c(1:3, 4:ncol(cna_data))]
   selected_cell_names <- colnames(cna_data_subset)[-c(1:3)]
 
-  # Standardize cell names in ploidy data to match CNA
   ploidy_data$cell.names <- gsub("-1", ".1", ploidy_data$cell.names)
-
-  # Match ploidy data with selected CNA cell names
   ploidy_data <- ploidy_data[match(selected_cell_names, ploidy_data$cell.names), ]
   ploidy_data$copykat.pred <- factor(ploidy_data$copykat.pred,
                                     levels = c("diploid", "aneuploid"),
                                     labels = c("Diploid", "Aneuploid"))
 
-  # Prepare the matrix for the heatmap
+  # Create heatmap elements
   mat_data <- t(as.matrix(cna_data_subset[, 4:ncol(cna_data_subset)]))
+  cna_data_subset$chrom <- factor(cna_data_subset$chrom,
+                                 levels = unique(cna_data_subset$chrom),
+                                 labels = paste0("chr", unique(cna_data_subset$chrom)))
 
-  # Define color palette and breaks for CNV values
+  # Define colors and annotations
   my_palette <- colorRampPalette(rev(brewer.pal(n = 3, name = "RdBu")))(999)
   col_breaks <- c(seq(-1, -0.4, length = 50),
-                  seq(-0.4, -0.2, length = 150),
-                  seq(-0.2, 0.2, length = 600),
-                  seq(0.2, 0.4, length = 150),
-                  seq(0.4, 1, length = 50))
+                 seq(-0.4, -0.2, length = 150),
+                 seq(-0.2, 0.2, length = 600),
+                 seq(0.2, 0.4, length = 150),
+                 seq(0.4, 1, length = 50))
   col_fun <- colorRamp2(col_breaks[c(1, 100, 400, 700, length(col_breaks))],
-                        my_palette[c(1, 100, 400, 700, length(my_palette))])
+                       my_palette[c(1, 100, 400, 700, length(my_palette))])
 
-  # Modify chromosome labels
-  cna_data_subset$chrom <- factor(cna_data_subset$chrom,
-                                  levels = unique(cna_data_subset$chrom),
-                                  labels = paste0("chr", unique(cna_data_subset$chrom)))
-
-  # Create row annotations for Ploidy and Cell Type
   ha_ploidy <- rowAnnotation(
     `Ploidy` = ploidy_data$copykat.pred,
-    col = list(Ploidy = c("Diploid" = "lightblue", "Aneuploid" = "coral")),
-    show_annotation_name = TRUE, annotation_name_side = "top"
+    col = list(Ploidy = c("Diploid" = "darkblue", "Aneuploid" = "darkred")),
+    show_annotation_name = TRUE
   )
 
   ha_cell_type <- rowAnnotation(
@@ -190,11 +183,12 @@ create_cnv_heatmap <- function(cna_file, ploidy_file, output_jpeg) {
       "NK" = "#A50F15", "Normal" = "#92C5DE", "Normal epithelial cells" = "#2166AC",
       "Plasma" = "#8C96C6", "T-cells" = "#CA0020", "Tumor" = "#67001F"
     )),
-    show_annotation_name = TRUE, annotation_name_side = "top"
+    show_annotation_name = TRUE
   )
 
-  # Generate the heatmap
-  ht <- Heatmap(
+  # Generate and save heatmap
+  jpeg(output_jpeg, width = 12, height = 10, units = "in", res = 300)
+  draw(Heatmap(
     mat_data,
     name = "CNV",
     col = col_fun,
@@ -215,60 +209,55 @@ create_cnv_heatmap <- function(cna_file, ploidy_file, output_jpeg) {
       title_gp = gpar(fontsize = 10),
       labels_gp = gpar(fontsize = 8)
     )
-  )
-
-  # Save the heatmap as a JPEG file
-  jpeg(output_jpeg, width = 12, height = 10, units = "in", res = 300)
-  draw(ht)
+  ))
   dev.off()
 }
 
-# Example usage of the complete pipeline
-run_copykat_pipeline <- function(
-  data_path,
-  metadata_file,
-  dataset_id_prefix,
-  aliquot,
-  output_dir = "."
-) {
-  # Create output directory if it doesn't exist
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
-  }
+# Main Pipeline Function ----
+#' Run complete CopyKAT analysis pipeline
+#'
+#' @param data_path Path to 10X data directory
+#' @param dataset_id Dataset identifier
+#' @param sample_id Sample identifier
+#' @param output_dir Output directory (default: ".")
+#' @return None (writes output files)
+run_copykat_pipeline <- function(data_path, dataset_id,
+                               sample_id, output_dir = ".") {
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
-  # Step 1: Run integrated CopyKAT analysis
+  # Run analysis
+  message("Starting analysis using metadata from: ", METADATA_FILE)
   results <- integrated_copykat(
     data.path = data_path,
-    metadata.file = metadata_file,
-    dataset_id_prefix = dataset_id_prefix,
-    aliquot = aliquot,
+    dataset_id = dataset_id,
+    sample_id = sample_id,
     output_dir = output_dir
   )
 
-  # Define output file paths
-  prediction_file <- file.path(output_dir, paste0(aliquot, "_copykat_prediction.txt"))
-  cna_file <- file.path(output_dir, paste0(aliquot, "_copykat_CNA_results.txt"))
-  annotated_prediction_file <- file.path(output_dir,
-                                       paste0(aliquot, "_copykat_prediction_with_metadata.txt"))
-  heatmap_file <- file.path(output_dir,
-                           paste0(aliquot, "_copykat_chromosome_heatmap_cell_types.jpg"))
+  # Define output paths
+  base_path <- file.path(output_dir, sample_id)
+  prediction_file <- paste0(base_path, "_copykat_prediction.txt")
+  cna_file <- paste0(base_path, "_copykat_CNA_results.txt")
+  annotated_file <- paste0(base_path, "_copykat_prediction_with_metadata.txt")
+  heatmap_file <- paste0(base_path, "_copykat_chromosome_heatmap_cell_types.jpg")
 
-  # Step 2: Annotate predictions with metadata
+  # Annotate and visualize
   annotated_results <- annotate_predictions_with_metadata(
-    metadata_file = metadata_file,
     prediction_file = prediction_file,
-    output_file = annotated_prediction_file,
-    dataset_id_prefix = dataset_id_prefix,
-    aliquot = aliquot
+    output_file = annotated_file,
+    dataset_id = dataset_id,
+    sample_id = sample_id
   )
 
-  # Step 3: Create and save CNV heatmap
   create_cnv_heatmap(
     cna_file = cna_file,
-    ploidy_file = annotated_prediction_file,
+    ploidy_file = annotated_file,
     output_jpeg = heatmap_file
   )
 
-  message("Pipeline completed successfully!")
-  message("Output files saved in: ", output_dir)
+  message("Pipeline completed. Outputs saved in: ", output_dir)
+  message(" - Predictions: ", prediction_file)
+  message(" - CNA results: ", cna_file)
+  message(" - Annotated results: ", annotated_file)
+  message(" - Heatmap: ", heatmap_file)
 }

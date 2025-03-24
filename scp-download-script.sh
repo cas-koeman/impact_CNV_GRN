@@ -29,7 +29,7 @@ declare -A FILE_PATHS
 FILE_PATHS[0]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/regulon_heatmap.png"
 FILE_PATHS[1]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/tumor_regulon_heatmap.png"
 FILE_PATHS[2]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/umap_expr_cell_type.png"
-FILE_PATHS[3]="CNV_calling/copyKAT/ccRCC_GBM/ALIQUOT/ALIQUOT_ID_copykat_chromosome_heatmap_cell_types.jpg"
+FILE_PATHS[3]="CNV_calling/copyKAT/ccRCC_GBM/ALIQUOT/ALIQUOT_copykat_chromosome_heatmap_cell_types.jpg"
 FILE_PATHS[4]="CNV_calling/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.png"
 FILE_PATHS[5]="CNV_calling/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.png"
 FILE_PATHS[6]="integration_visualization/ccRCC_GBM/ALIQUOT/all_cnv_mosaic.png"

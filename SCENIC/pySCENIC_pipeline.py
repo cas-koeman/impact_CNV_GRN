@@ -490,7 +490,7 @@ class ResultVisualizer:
         max_abs_value = np.max(np.abs(normalized_scores.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(normalized_scores, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False, yticklabels=True,
+        g = sns.clustermap(normalized_scores, figsize=[12, 8], cmap=plt.cm.RdBu_r, xticklabels=False, yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
                            dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value,  vmax=max_abs_value)
@@ -499,13 +499,14 @@ class ResultVisualizer:
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.grid(False)
         g.ax_heatmap.tick_params(axis='both', which='both', length=0)
-        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0)
+        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize = 24)
+        g.cax.yaxis.label.set_size(24)  # Adjust as needed
 
         # Save figure
-        plt.savefig(os.path.join(self.paths['figures'], 'regulon_heatmap.png'))
+        plt.savefig(os.path.join(self.paths['figures'], 'regulon_heatmap.png'), bbox_inches="tight")
         plt.close()
 
-    def plot_top_regulons(self, num_top_regulons=30):
+    def plot_top_regulons(self, num_top_regulons=10):
         """
         Plot heatmap of top regulons' activity across cell types.
         """
@@ -524,7 +525,7 @@ class ResultVisualizer:
         max_abs_value = np.max(np.abs(scaled_aucell_mtx.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False,
+        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 8], cmap=plt.cm.RdBu_r, xticklabels=False,
                            yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
@@ -534,10 +535,11 @@ class ResultVisualizer:
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.grid(False)
         g.ax_heatmap.tick_params(axis='both', which='both', length=0)
-        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0)
+        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize = 24)
+        g.cax.yaxis.label.set_size(24)  # Adjust as needed
 
         # Save figure
-        plt.savefig(os.path.join(self.paths['figures'], 'tumor_regulon_heatmap.png'))
+        plt.savefig(os.path.join(self.paths['figures'], 'tumor_regulon_heatmap.png'), bbox_inches="tight")
         plt.close()
 
 
@@ -630,45 +632,45 @@ class WorkflowManager:
 
         print("Starting PySCENIC workflow for: %s", self.cell_type or 'whole dataset')
 
-        # Step 1: Create the loom file
-        print("Step 1: Creating the desired loom file")
-        grn_inference = GRNInference(data_loader.paths)
-        grn_inference.create_loom_file(adata)
-
-        # Prepare commands
-        grn_inference_config = grn_inference.run_grn_inference()
-        ctx_inference_config = grn_inference.run_ctx_inference(self.pruning)
-        aucell_config = grn_inference.run_aucell()
-
-        # Step 2: Run GRN inference
-        print("Step 2: Running GRN inference")
-        print("Executing command: %s", grn_inference_config['command'])
-        subprocess.run(grn_inference_config['command'], shell=True, check=True)
-        adjacencies = pd.read_csv(grn_inference_config['output_path'], index_col=False)
-
-        # Step 3: Run context-specific inference
-        print("Step 3: Running context-specific inference")
-        print("Executing command: %s", ctx_inference_config['command'])
-        subprocess.run(ctx_inference_config['command'], shell=True, check=True)
-        regulons = pd.read_csv(ctx_inference_config['output_path'], header=1)
-
-        # Step 4: Visualize gene distribution
+        # # Step 1: Create the loom file
+        # print("Step 1: Creating the desired loom file")
+        # grn_inference = GRNInference(data_loader.paths)
+        # grn_inference.create_loom_file(adata)
+        #
+        # # Prepare commands
+        # grn_inference_config = grn_inference.run_grn_inference()
+        # ctx_inference_config = grn_inference.run_ctx_inference(self.pruning)
+        # aucell_config = grn_inference.run_aucell()
+        #
+        # # Step 2: Run GRN inference
+        # print("Step 2: Running GRN inference")
+        # print("Executing command: %s", grn_inference_config['command'])
+        # subprocess.run(grn_inference_config['command'], shell=True, check=True)
+        # adjacencies = pd.read_csv(grn_inference_config['output_path'], index_col=False)
+        #
+        # # Step 3: Run context-specific inference
+        # print("Step 3: Running context-specific inference")
+        # print("Executing command: %s", ctx_inference_config['command'])
+        # subprocess.run(ctx_inference_config['command'], shell=True, check=True)
+        # regulons = pd.read_csv(ctx_inference_config['output_path'], header=1)
+        #
+        # # Step 4: Visualize gene distribution
         print("Step 4: Visualizing gene distribution")
         gene_counts = np.sum(adata.X > 0, axis=1)
         result_visualizer = ResultVisualizer(data_loader.paths)
         result_visualizer.plot_gene_distribution(gene_counts, self.cell_type)
-
-        # Step 5: Run AUCell
-        print("Step 5: Running AUCell")
-        print("Executing command: %s", aucell_config['command'])
-        subprocess.run(aucell_config['command'], shell=True, check=True)
-        lf = lp.connect(aucell_config['output_path'], mode='r+', validate=False)
-        aucell_mtx = pd.DataFrame(lf.ca.RegulonsAUC, index=lf.ca.CellID)
-        lf.close()
-
-        # Step 6: Dimensionality reduction on AUCell results
-        print("Step 6: Dimensionality reduction on AUCell results")
-        result_visualizer.aucell_dimensionality_reduction(aucell_mtx, adata, self.cell_type)
+        #
+        # # Step 5: Run AUCell
+        # print("Step 5: Running AUCell")
+        # print("Executing command: %s", aucell_config['command'])
+        # subprocess.run(aucell_config['command'], shell=True, check=True)
+        # lf = lp.connect(aucell_config['output_path'], mode='r+', validate=False)
+        # aucell_mtx = pd.DataFrame(lf.ca.RegulonsAUC, index=lf.ca.CellID)
+        # lf.close()
+        #
+        # # Step 6: Dimensionality reduction on AUCell results
+        # print("Step 6: Dimensionality reduction on AUCell results")
+        # result_visualizer.aucell_dimensionality_reduction(aucell_mtx, adata, self.cell_type)
 
         # Step 7: Visualize AUCell results
         print("Step 7: Visualization of the AUCell results")

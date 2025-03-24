@@ -6,19 +6,37 @@
 #SBATCH --ntasks=4
 #SBATCH --mem-per-cpu=64000
 
-# Load required modules (if necessary)
-bash ~/.bashrc
+# Environment Setup
+source ~/.bashrc
 source /work/project/ladcol_010/miniconda3/etc/profile.d/conda.sh
 conda activate r_env2
 
-# Define input variables
-DATA_PATH="/work/project/ladcol_020/datasets/ccRCC_GBM/ccRCC_C3L-00096-T1_CPT0001180011/C3L-00096-T1_CPT0001180011_snRNA_ccRCC/outs/raw_feature_bc_matrix"
-METADATA_FILE="/work/project/ladcol_020/datasets/ccRCC_GBM/GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz"
-DATASET_PREFIX="ccRCC_"
-ALIQUOT="CPT0001180011"
-OUTPUT_DIR="/work/project/ladcol_020/CNV_calling/inferCNV/ccRCC_GBM/C3L-00096-T1_CPT0001180011"
+# Set variables for the sample and dataset IDs
+SAMPLE_ID="ccRCC_"
+DATASET_ID="C3L-00004-T1_CPT0001540013"
 
-# Run the R script
-Rscript infercnv_pipeline.R "$DATA_PATH" "$METADATA_FILE" "$DATASET_PREFIX" "$ALIQUOT" "$OUTPUT_DIR"
+# Generate input and ouput paths
+RAW_DATA_BASE="/work/project/ladcol_020/datasets/ccRCC_GBM"
+RESULTS_BASE="/work/project/ladcol_020/scCNV/inferCNV/ccRCC_GBM"
 
-echo "InferCNV analysis complete! Check the $OUTPUT_DIR directory for results."
+DATA_PATH="${RAW_DATA_BASE}/${SAMPLE_ID}_${DATASET_ID}_snRNA_ccRCC/outs/raw_feature_bc_matrix"
+OUTPUT_DIR="${RESULTS_BASE}/${SAMPLE_ID}_${DATASET_ID}"
+
+# Create output directory if it doesn't exist
+mkdir -p "${OUTPUT_DIR}"
+
+# Run Analysis
+echo "Starting inferCNV analysis for ${SAMPLE_ID}_${DATASET_ID}"
+echo "Input data: ${DATA_PATH}"
+echo "Output directory: ${OUTPUT_DIR}"
+
+# Run the R script (note: metadata file is now hardcoded in the R script)
+Rscript infercnv_pipeline.R \
+    "${DATA_PATH}" \
+    "${SAMPLE_ID}" \
+    "${DATASET_ID}" \
+    "${OUTPUT_DIR}"
+
+# Completion
+echo "InferCNV analysis complete!"
+echo "Results saved in: ${OUTPUT_DIR}"

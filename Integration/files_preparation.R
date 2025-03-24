@@ -201,8 +201,8 @@ create_paths <- function(base_dir, dataset_prefix, sample_id) {
   # Define the base paths
   data_path <- file.path(base_dir, "datasets", "ccRCC_GBM", paste0(dataset_prefix, sample_id), paste0(sample_id, "_snRNA_ccRCC"), "outs", "raw_feature_bc_matrix")
   metadata_file <- file.path(base_dir, "datasets", "ccRCC_GBM", "GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz")
-  infercnv_data_file <- file.path(base_dir, "CNV_calling", "inferCNV", "ccRCC_GBM", sample_id, "infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.observations.txt")
-  output_dir <- file.path(base_dir, "integration_visualization", "ccRCC_GBM", sample_id)
+  infercnv_data_file <- file.path(base_dir, "scCNV", "inferCNV", "ccRCC_GBM", sample_id, "infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.observations.txt")
+  output_dir <- file.path(base_dir, "integration_GRN_CNV", "ccRCC_GBM", sample_id)
 
   # Create the output directory if it doesn't exist
   if (!dir.exists(output_dir)) {

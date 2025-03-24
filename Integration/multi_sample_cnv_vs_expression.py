@@ -6,7 +6,7 @@ import os
 from scipy import stats
 
 
-class MultiDatasetCNVAnalysis:
+class MultiSampleCNVExpressionAnalyzer:
     def __init__(self, datasets, cnv_dir, raw_count_dir):
         """
         Initialize the class with dataset names and directory paths.
@@ -152,11 +152,11 @@ class MultiDatasetCNVAnalysis:
 
         # Add R² value and regression equation
         plt.text(0.05, 0.95, f'R² = {r_squared:.4f}', transform=plt.gca().transAxes,
-                 fontsize=16, verticalalignment='top')
+                 fontsize=18, verticalalignment='top')
 
         equation = f'y = {slope:.4f}x + {intercept:.4f}'
         plt.text(0.05, 0.90, equation, transform=plt.gca().transAxes,
-                 fontsize=16, verticalalignment='top')
+                 fontsize=18, verticalalignment='top')
 
         # Set x-axis limits and ticks
         plt.xlim(-2.5, 2.5)
@@ -189,12 +189,12 @@ datasets = [
     "C3L-00416-T2_CPT0010100001"
 ]
 
-cnv_dir = "/work/project/ladcol_020/integration_visualization/ccRCC_GBM/"
-raw_count_dir = "/work/project/ladcol_020/integration_visualization/ccRCC_GBM/"
+cnv_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"
+raw_count_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"
 
 # Initialize and run the multi-dataset analysis
 print("Initializing MultiDatasetCNVAnalysis...")
-multi_analysis = MultiDatasetCNVAnalysis(datasets, cnv_dir, raw_count_dir)
+multi_analysis = MultiSampleCNVExpressionAnalyzer(datasets, cnv_dir, raw_count_dir)
 
 print("\nProcessing all datasets...")
 multi_analysis.process_all_datasets()
