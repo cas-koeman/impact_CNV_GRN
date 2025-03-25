@@ -75,7 +75,7 @@ dependencies:
   - cached-property=1.5.2=hd8ed1ab_1
   - cached_property=1.5.2=pyha770c72_1
   - cairo=1.16.0=hb05425b_5
-  - certifi=2024.12.14=pyhd8ed1ab_0
+  - certifi=2025.1.31=pyhd8ed1ab_0
   - cffi=1.17.1=py310h1fdaa30_0
   - click=8.1.7=py310h06a4308_0
   - colorama=0.4.6=pyhd8ed1ab_0
@@ -203,6 +203,7 @@ dependencies:
   - matplotlib=3.9.2=py310h06a4308_1
   - matplotlib-base=3.9.2=py310hbfdbfaf_1
   - matplotlib-inline=0.1.6=py310h06a4308_0
+  - matplotlib-venn=1.1.1=pyhd8ed1ab_1
   - mistune=2.0.4=py310h06a4308_0
   - multicore-tsne=0.1_d4ff4aab=py310hcb52e73_5
   - mysql=8.4.0=h29a9f33_1
@@ -221,7 +222,7 @@ dependencies:
   - oniguruma=6.9.7.1=h27cfd23_0
   - openjpeg=2.5.2=he7f1fd0_0
   - openldap=2.6.4=h42fbc30_0
-  - openssl=3.4.0=h7b32b05_1
+  - openssl=3.4.1=h7b32b05_0
   - overrides=7.4.0=py310h06a4308_0
   - pandas=2.2.3=py310h6a678d5_0
   - pandoc=2.12=h06a4308_3
@@ -512,7 +513,7 @@ dependencies:
       - multidict==6.1.0
       - multiprocessing-on-dill==3.5.0a4
       - numexpr==2.10.2
-      - numpy==1.23.5
+      - numpy==2.0.2
       - packaging==24.2
       - partd==1.4.2
       - propcache==0.2.0
