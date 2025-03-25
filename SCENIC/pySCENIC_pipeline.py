@@ -117,6 +117,9 @@ class DataLoader:
         """
         print("Reading expression data from %s", self.paths['raw_matrix'])
         adata = sc.read_10x_mtx(self.paths['raw_matrix'], var_names='gene_symbols', cache=False)
+        adata = adata[:, np.random.choice(adata.obs_names,
+                                                 size=int(adata.shape[1] * 0.01),
+                                                 replace=False)]
         sc.pp.filter_cells(adata, min_genes=0)
 
         # Compute additional QC metrics

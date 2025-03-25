@@ -8,7 +8,7 @@
 # Required libraries
 library(Seurat)
 library(Matrix)
-library(inferCNV)
+library(infercnv)
 
 # Hardcoded paths
 METADATA_FILE <- "/work/project/ladcol_020/datasets/ccRCC_GBM/GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz"
@@ -18,22 +18,14 @@ GENE_ANNOTATION_FILE <- "/work/project/ladcol_020/scCNV/inferCNV/hg38_gencode_v2
 #' Prepare expression matrix and annotations for inferCNV
 #'
 #' @param data.path Path to 10X Genomics data directory
-#' @param dataset_id Dataset identifier prefix
 #' @param sample_id Sample identifier
 #' @param min.genes Minimum genes per cell (default: 200)
 #' @param min.cells Minimum cells per gene (default: 3)
 #' @param output_dir Output directory
 #' @return List containing filtered matrix, annotations, and cell types
-prepare_infercnv_data <- function(data.path, dataset_id,
-                                 sample_id, min.genes = 200,
+prepare_infercnv_data <- function(data.path, sample_id, min.genes = 200,
                                  min.cells = 3, output_dir) {
   set.seed(42)  # For reproducibility
-
-  # Create output directory
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  }
-  file_prefix <- paste0(dataset_id, sample_id)
 
   # Read and filter data
   message("Reading and filtering 10X data...")
@@ -50,11 +42,13 @@ prepare_infercnv_data <- function(data.path, dataset_id,
     read.table(METADATA_FILE, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   }
 
-  # Filter metadata and matrix
-  metadata_filtered <- metadata[
-    grepl(paste0("^", sample_id), metadata$GEO.sample) &
-      grepl(paste0("^", dataset_id), metadata$Merged_barcode),
-  ]
+  # More robust filtering
+  matches <- grepl(paste0("^", sample_id), metadata$GEO.sample)
+      if (sum(matches) == 0) {
+        stop("No matching rows found for sample_id: ", sample_id)
+      }
+  metadata_filtered <- metadata[matches, ]
+
   common_barcodes <- intersect(colnames(filtered_matrix), metadata_filtered$Barcode)
   final_matrix <- filtered_matrix[, common_barcodes]
   final_metadata <- metadata_filtered[match(common_barcodes, metadata_filtered$Barcode), ]
@@ -80,10 +74,10 @@ prepare_infercnv_data <- function(data.path, dataset_id,
   # Export files
   message("Exporting expression matrix and annotations to: ", output_dir)
   write.table(final_matrix,
-              file.path(output_dir, paste0(file_prefix, "_expression_matrix.txt")),
+              file.path(output_dir, "expression_matrix.txt"),
               sep = "\t", quote = FALSE)
   write.table(cell_annotations,
-              file.path(output_dir, paste0(file_prefix, "_annotations.txt")),
+              file.path(output_dir, "annotations.txt"),
               sep = "\t", quote = FALSE, col.names = FALSE, row.names = FALSE)
 
   return(list(
@@ -139,23 +133,33 @@ run_infercnv_analysis <- function(input_matrix, input_annotations,
     num_threads = 4
   )
 
-  # Process results
+  # Process results - enhanced version of the provided code
   message("Processing results...")
-  subclusters_tumor <- infercnv_obj@tumor_subclusters$subclusters$cancer
-  cell_names <- colnames(infercnv_obj@expr.data)
 
-  clustering_infercnv <- NULL
-  if (!is.null(subclusters_tumor)) {
+  # Initialize clustering results
+  clustering_infercnv <- data.frame(cell = character(),
+                                   infercnv = character(),
+                                   stringsAsFactors = FALSE)
+
+  # Check if tumor subclusters exist
+  if (!is.null(infercnv_obj@tumor_subclusters$subclusters$cancer)) {
+    subclusters_tumor <- infercnv_obj@tumor_subclusters$subclusters$cancer
+    cell_names <- colnames(infercnv_obj@expr.data)
+
     for (subc in names(subclusters_tumor)) {
-      clustering_infercnv <- rbind(
-        clustering_infercnv,
-        data.frame(
-          cell = cell_names[subclusters_tumor[[subc]]],
-          infercnv = subc,
-          stringsAsFactors = FALSE
+      if (length(subclusters_tumor[[subc]]) > 0) {
+        clustering_infercnv <- rbind(
+          clustering_infercnv,
+          data.frame(
+            cell = cell_names[subclusters_tumor[[subc]]],
+            infercnv = subc,
+            stringsAsFactors = FALSE
+          )
         )
-      )
+      }
     }
+  } else {
+    warning("No tumor subclusters found in the inferCNV object")
   }
 
   # Simplify CNV calls
@@ -167,10 +171,12 @@ run_infercnv_analysis <- function(input_matrix, input_annotations,
   message("Saving results to: ", output_dir)
   saveRDS(res_inferCNV, file.path(output_dir, "processed_infercnv_results.rds"))
   saveRDS(clustering_infercnv, file.path(output_dir, "tumor_subclusters.rds"))
+  saveRDS(infercnv_obj, file.path(output_dir, "infercnv_object.rds"))  # Save full object
 
   return(list(
     clustering_results = clustering_infercnv,
-    processed_data = res_inferCNV
+    processed_data = res_inferCNV,
+    infercnv_object = infercnv_obj
   ))
 }
 
@@ -178,17 +184,15 @@ run_infercnv_analysis <- function(input_matrix, input_annotations,
 #' Run complete inferCNV analysis pipeline
 #'
 #' @param data.path Path to 10X data directory
-#' @param dataset_id Dataset identifier prefix
 #' @param sample_id Sample identifier
 #' @param output_dir Output directory (default: ".")
 #' @return None (writes output files)
-run_infercnv_pipeline <- function(data.path, dataset_id,
+run_infercnv_pipeline <- function(data.path,
                                  sample_id, output_dir = ".") {
   # Step 1: Prepare data
   message("Starting inferCNV pipeline")
   prepared_data <- prepare_infercnv_data(
     data.path = data.path,
-    dataset_id = dataset_id,
     sample_id = sample_id,
     output_dir = output_dir
   )
@@ -199,33 +203,34 @@ run_infercnv_pipeline <- function(data.path, dataset_id,
 
   # Step 2: Run inferCNV
   message("\nStarting inferCNV analysis...")
-  run_infercnv_analysis(
-    input_matrix = file.path(output_dir, paste0(dataset_id, sample_id, "_expression_matrix.txt")),
-    input_annotations = file.path(output_dir, paste0(dataset_id, sample_id, "_annotations.txt")),
+  infercnv_results <- run_infercnv_analysis(
+    input_matrix = file.path(output_dir, "expression_matrix.txt"),
+    input_annotations = file.path(output_dir, "annotations.txt"),
     output_dir = output_dir,
     ref_groups = ref_groups
   )
 
-  message("Pipeline completed successfully")
+  # Additional post-processing if needed
+  message("\nPipeline completed successfully")
   message("Output directory: ", normalizePath(output_dir))
+
+  return(infercnv_results)
 }
 
 # Command-line execution ----
 if (!interactive()) {
   args <- commandArgs(trailingOnly = TRUE)
   if (length(args) < 3) {
-    stop("Usage: Rscript infercnv_pipeline.R <data.path> <dataset_id> <sample_id> [output_dir]")
+    stop("Usage: Rscript infercnv_pipeline.R <data.path> <sample_id> [output_dir]")
   }
 
   data.path <- args[1]
-  dataset_id <- args[2]
-  sample_id <- args[3]
-  output_dir <- if (length(args) > 3) args[4] else "."
+  sample_id <- args[2]
+  output_dir <- if (length(args) > 2) args[3] else "."
 
   # Run pipeline
   run_infercnv_pipeline(
     data.path = data.path,
-    dataset_id = dataset_id,
     sample_id = sample_id,
     output_dir = output_dir
   )

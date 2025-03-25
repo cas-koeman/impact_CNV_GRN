@@ -20,19 +20,19 @@ METADATA_FILE <- "/work/project/ladcol_020/datasets/ccRCC_GBM/GSE240822_GBM_ccRC
 #' Run integrated CopyKAT analysis with metadata filtering
 #'
 #' @param data.path Path to 10X Genomics data directory
-#' @param dataset_id Dataset identifier for filtering
 #' @param sample_id Sample identifier for filtering
 #' @param genome Reference genome (default: "hg20")
 #' @param n.cores Number of cores for parallel processing (default: 4)
 #' @param output_dir Output directory (default: ".")
 #' @return CopyKAT result object
-integrated_copykat <- function(data.path, dataset_id,
+integrated_copykat <- function(data.path,
                              sample_id, genome = "hg20",
                              n.cores = 4, output_dir = ".") {
   set.seed(42)  # For reproducibility
 
   # Read and process data
   message("Reading 10X data...")
+  print(data.path)
   raw <- Read10X(data.dir = data.path)
   seurat_obj <- CreateSeuratObject(
     counts = raw,
@@ -50,11 +50,12 @@ integrated_copykat <- function(data.path, dataset_id,
     read.table(METADATA_FILE, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
   }
 
-  # Filter metadata and Seurat object
-  metadata_filtered <- metadata[
-    grepl(paste0("^", sample_id), metadata$GEO.sample) &
-      grepl(paste0("^", dataset_id), metadata$Merged_barcode),
-  ]
+  # More robust filtering
+  matches <- grepl(paste0("^", sample_id), metadata$GEO.sample)
+      if (sum(matches) == 0) {
+        stop("No matching rows found for sample_id: ", sample_id)
+      }
+  metadata_filtered <- metadata[matches, ]
 
   matching_barcodes <- intersect(metadata_filtered$Barcode, colnames(seurat_obj))
   seurat_filtered <- subset(seurat_obj, cells = matching_barcodes)
@@ -94,11 +95,10 @@ integrated_copykat <- function(data.path, dataset_id,
 #'
 #' @param prediction_file Path to CopyKAT prediction file
 #' @param output_file Path for output file
-#' @param dataset_id Dataset identifier for filtering
 #' @param sample_id Sample identifier for filtering
 #' @return Annotated data.frame
 annotate_predictions_with_metadata <- function(prediction_file, output_file,
-                                             dataset_id, sample_id) {
+                                             sample_id) {
   # Load data
   message("Loading metadata from: ", METADATA_FILE)
   metadata <- if (endsWith(METADATA_FILE, ".gz")) {
@@ -109,14 +109,15 @@ annotate_predictions_with_metadata <- function(prediction_file, output_file,
 
   prediction <- read.table(prediction_file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
 
-  # Filter metadata
-  filtered_metadata <- metadata[
-    grepl(paste0("^", sample_id), metadata$GEO.sample) &
-      grepl(paste0("^", dataset_id), metadata$Merged_barcode),
-  ]
+  # More robust filtering
+  matches <- grepl(paste0("^", sample_id), metadata$GEO.sample)
+      if (sum(matches) == 0) {
+        stop("No matching rows found for sample_id: ", sample_id)
+      }
+  metadata_filtered <- metadata[matches, ]
 
   # Annotate predictions
-  annotation_data <- merge(prediction, filtered_metadata,
+  annotation_data <- merge(prediction, metadata_filtered,
                           by.x = "cell.names", by.y = "Barcode",
                           all.x = TRUE)
 
@@ -217,11 +218,10 @@ create_cnv_heatmap <- function(cna_file, ploidy_file, output_jpeg) {
 #' Run complete CopyKAT analysis pipeline
 #'
 #' @param data_path Path to 10X data directory
-#' @param dataset_id Dataset identifier
 #' @param sample_id Sample identifier
 #' @param output_dir Output directory (default: ".")
 #' @return None (writes output files)
-run_copykat_pipeline <- function(data_path, dataset_id,
+run_copykat_pipeline <- function(data_path,
                                sample_id, output_dir = ".") {
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
@@ -229,7 +229,6 @@ run_copykat_pipeline <- function(data_path, dataset_id,
   message("Starting analysis using metadata from: ", METADATA_FILE)
   results <- integrated_copykat(
     data.path = data_path,
-    dataset_id = dataset_id,
     sample_id = sample_id,
     output_dir = output_dir
   )
@@ -245,7 +244,6 @@ run_copykat_pipeline <- function(data_path, dataset_id,
   annotated_results <- annotate_predictions_with_metadata(
     prediction_file = prediction_file,
     output_file = annotated_file,
-    dataset_id = dataset_id,
     sample_id = sample_id
   )
 

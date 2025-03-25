@@ -12,15 +12,16 @@ source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
 conda activate copyKAT
 
 # Set variables for the sample and dataset IDs
-DATASET_PREFIX="ccRCC_"
-ALIQUOT="C3L-00004-T1_CPT0001540013"
+DATASET_ID="ccRCC_GBM"
+SAMPLE_ID="C3L-00004-T1_CPT0001540013"
 
 # Generate input and ouput paths
-BASE_DATA_DIR="/work/project/ladcol_020/datasets/ccRCC_GBM"
-DATA_PATH="${BASE_DATA_DIR}/${ALIQUOT}_snRNA_ccRCC/outs/raw_feature_bc_matrix"
+BASE_DIR="/work/project/ladcol_020"
+BASE_DATA_DIR="/work/project/ladcol_020/datasets/${DATASET_ID}"
+DATA_PATH="${BASE_DATA_DIR}/ccRCC_${SAMPLE_ID}/${SAMPLE_ID}_snRNA_ccRCC/outs/raw_feature_bc_matrix"
 
 # Create output directory if it doesn't exist
-OUTPUT_DIR="$(pwd)/ccRCC_GBM/${DATASET_PREFIX}${ALIQUOT}"
+OUTPUT_DIR="${BASE_DIR}/scCNV/copyKAT/${DATASET_ID}/${SAMPLE_ID}"
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -35,8 +36,7 @@ Rscript -e "
 source('copykat_pipeline.R')
 run_copykat_pipeline(
   data_path = '$DATA_PATH',
-  dataset_id_prefix = '$DATASET_PREFIX',
-  aliquot = '$ALIQUOT',
+  sample_id = '$SAMPLE_ID',
   output_dir = '$OUTPUT_DIR'
 )"
 

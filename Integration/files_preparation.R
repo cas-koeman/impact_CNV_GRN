@@ -40,8 +40,8 @@ prepare_infercnv_data <- function(
     stop(e)
   })
 
-  if(!"Aliquot" %in% colnames(metadata)) {
-    stop("Column 'Aliquot' not found in metadata")
+  if(!"GEO.sample" %in% colnames(metadata)) {
+    stop("Column 'GEO.sample' not found in metadata")
   }
 
   if(!"Merged_barcode" %in% colnames(metadata)) {
@@ -58,7 +58,7 @@ prepare_infercnv_data <- function(
   # Check if any barcodes found after filtering
   if(nrow(metadata_filtered) == 0) {
     print("Warning: No entries found after filtering metadata")
-    print(paste("Unique sample_id values in metadata:", paste(unique(metadata$Aliquot), collapse=", ")))
+    print(paste("Unique sample_id values in metadata:", paste(unique(metadata$GEO.sample), collapse=", ")))
     print(paste("Sample of Merged_barcode values:", paste(head(metadata$Merged_barcode), collapse=", ")))
   }
 

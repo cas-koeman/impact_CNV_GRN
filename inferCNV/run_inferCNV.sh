@@ -12,15 +12,15 @@ source /work/project/ladcol_010/miniconda3/etc/profile.d/conda.sh
 conda activate r_env2
 
 # Set variables for the sample and dataset IDs
-SAMPLE_ID="ccRCC_"
-DATASET_ID="C3L-00004-T1_CPT0001540013"
+DATASET_ID="ccRCC_GBM"
+SAMPLE_ID="C3L-00004-T1_CPT0001540013"
 
 # Generate input and ouput paths
-RAW_DATA_BASE="/work/project/ladcol_020/datasets/ccRCC_GBM"
-RESULTS_BASE="/work/project/ladcol_020/scCNV/inferCNV/ccRCC_GBM"
+RAW_DATA_BASE="/work/project/ladcol_020/datasets/${DATASET_ID}"
+RESULTS_BASE="/work/project/ladcol_020/scCNV/inferCNV/${DATASET_ID}"
 
-DATA_PATH="${RAW_DATA_BASE}/${SAMPLE_ID}_${DATASET_ID}_snRNA_ccRCC/outs/raw_feature_bc_matrix"
-OUTPUT_DIR="${RESULTS_BASE}/${SAMPLE_ID}_${DATASET_ID}"
+DATA_PATH="${RAW_DATA_BASE}/ccRCC_${SAMPLE_ID}/${SAMPLE_ID}_snRNA_ccRCC/outs/raw_feature_bc_matrix"
+OUTPUT_DIR="${RESULTS_BASE}/${SAMPLE_ID}"
 
 # Create output directory if it doesn't exist
 mkdir -p "${OUTPUT_DIR}"
@@ -34,7 +34,6 @@ echo "Output directory: ${OUTPUT_DIR}"
 Rscript infercnv_pipeline.R \
     "${DATA_PATH}" \
     "${SAMPLE_ID}" \
-    "${DATASET_ID}" \
     "${OUTPUT_DIR}"
 
 # Completion
