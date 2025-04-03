@@ -178,15 +178,17 @@ class MultiSampleCNVExpressionAnalyzer:
         print("Scatterplot with trendline saved as 'zscore_cnv_scatter_all_datasets.png'.")
 
 # Example usage:
-datasets = [
-    #"C3L-00004-T1_CPT0001540013",
+sample_ids = [
+    "C3L-00004-T1_CPT0001540013",
     "C3L-00026-T1_CPT0001500003",
     "C3L-00088-T1_CPT0000870003",
-    "C3L-00917-T1_CPT0023690004",
-    "C3N-00495-T1_CPT0078510004",
+    # "C3L-00096-T1_CPT0001180011",
+    "C3L-00416-T2_CPT0010100001",
     "C3L-00448-T1_CPT0010160004",
+    "C3L-00917-T1_CPT0023690004",
     "C3L-01313-T1_CPT0086820004",
-    "C3L-00416-T2_CPT0010100001"
+    "C3N-00317-T1_CPT0012280004",
+    "C3N-00495-T1_CPT0078510004"
 ]
 
 cnv_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"

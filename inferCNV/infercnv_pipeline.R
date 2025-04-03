@@ -31,8 +31,7 @@ prepare_infercnv_data <- function(data.path, sample_id, min.genes = 200,
   message("Reading and filtering 10X data...")
   raw <- Read10X(data.dir = data.path)
   filtered_matrix <- raw[rowSums(raw > 0) >= min.cells, colSums(raw > 0) >= min.genes]
-  message("Filtered dimensions: ", nrow(filtered_matrix), " genes x ",
-          ncol(filtered_matrix), " cells")
+  message("Filtered dimensions: ", nrow(filtered_matrix), " genes x ", ncol(filtered_matrix), " cells")
 
   # Process metadata
   message("Processing metadata from: ", METADATA_FILE)
@@ -130,10 +129,10 @@ run_infercnv_analysis <- function(input_matrix, input_annotations,
     HMM = TRUE,
     HMM_type = "i6",
     analysis_mode = "subclusters",
-    num_threads = 4
+    num_threads = 8
   )
 
-  # Process results - enhanced version of the provided code
+  # Process results - simplified version for only "Tumor" subclusters
   message("Processing results...")
 
   # Initialize clustering results
@@ -141,25 +140,35 @@ run_infercnv_analysis <- function(input_matrix, input_annotations,
                                    infercnv = character(),
                                    stringsAsFactors = FALSE)
 
-  # Check if tumor subclusters exist
-  if (!is.null(infercnv_obj@tumor_subclusters$subclusters$cancer)) {
-    subclusters_tumor <- infercnv_obj@tumor_subclusters$subclusters$cancer
+  # Directly access Tumor subclusters
+  if (!is.null(infercnv_obj@tumor_subclusters$subclusters$Tumor)) {
+    subclusters_tumor <- infercnv_obj@tumor_subclusters$subclusters$Tumor
+    message("Found ", length(subclusters_tumor), " tumor subclusters")
+    message("Subcluster names: ", paste(names(subclusters_tumor), collapse = ", "))
+
     cell_names <- colnames(infercnv_obj@expr.data)
 
+    # Process each tumor subcluster
     for (subc in names(subclusters_tumor)) {
-      if (length(subclusters_tumor[[subc]]) > 0) {
+      cell_indices <- subclusters_tumor[[subc]]
+      if (length(cell_indices) > 0) {
+        message("Assigning ", length(cell_indices), " cells to subcluster ", subc)
+
         clustering_infercnv <- rbind(
           clustering_infercnv,
           data.frame(
-            cell = cell_names[subclusters_tumor[[subc]]],
+            cell = cell_names[cell_indices],
             infercnv = subc,
             stringsAsFactors = FALSE
           )
         )
       }
     }
+
+    message("Successfully assigned ", nrow(clustering_infercnv), " tumor cells to ",
+            length(unique(clustering_infercnv$infercnv)), " subclusters")
   } else {
-    warning("No tumor subclusters found in the inferCNV object")
+    warning("No 'Tumor' subclusters found in inferCNV object")
   }
 
   # Simplify CNV calls

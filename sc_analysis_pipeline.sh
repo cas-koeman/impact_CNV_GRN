@@ -61,10 +61,6 @@ run_copykat_analysis() {
 
     log_start "${step_name}"
 
-    # Unified Conda setup
-    source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
-    conda activate copyKAT
-
     Rscript -e "
     source('${COPYKAT_SCRIPT}')
     run_copykat_pipeline(
@@ -73,7 +69,6 @@ run_copykat_analysis() {
       output_dir = '${COPYKAT_OUTPUT}'
     )"
 
-    conda deactivate
     log_end "${step_name}" "${start_time}"
 }
 
@@ -83,16 +78,11 @@ run_infercnv_analysis() {
 
     log_start "${step_name}"
 
-    # Use the same Conda installation as other tools
-    source work/project/ladcol_010/miniconda3/etc/profile.d/conda.sh
-    conda activate r_env2
-
     Rscript "${INFERCNV_SCRIPT}" \
         "${RAW_DATA_DIR}" \
         "${SAMPLE_ID}" \
         "${INFERCNV_OUTPUT}"
 
-    conda deactivate
     log_end "${step_name}" "${start_time}"
 }
 
@@ -102,9 +92,6 @@ run_pyscenic_analysis() {
 
     log_start "${step_name}"
 
-    source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
-    conda activate pyscenic
-
     for cell_type in "${CELL_TYPES[@]}"; do
         for prune in "${PRUNE_FLAGS[@]}"; do
             local sub_step_name="pySCENIC (${cell_type}, ${prune})"
@@ -113,19 +100,17 @@ run_pyscenic_analysis() {
             log_start "${sub_step_name}"
 
             python "${PYSCENIC_SCRIPT}" \
-                "${BASE_DIR}/scGRN/scGRNi/RNA/SCENIC/" \
+                "${BASE_DIR}/scGRNi/RNA/SCENIC/" \
                 "${BASE_DATA_DIR}" \
                 "${DATASET_ID}/" \
                 "${SAMPLE_ID}" \
                 --cell_type "${cell_type}" \
                 --prune "${prune}" \
-                --output_dir "${PYSCENIC_OUTPUT}"
 
             log_end "${sub_step_name}" "${sub_start_time}"
         done
     done
 
-    conda deactivate
     log_end "${step_name}" "${start_time}"
 }
 
@@ -146,10 +131,21 @@ main() {
     mkdir -p "${INFERCNV_OUTPUT}"
     mkdir -p "${PYSCENIC_OUTPUT}"
 
-    # Run analyses
-    run_copykat_analysis
+    # Activate Conda environments
+    source /work/project/ladcol_010/miniconda3/etc/profile.d/conda.sh
+    conda activate r_env2
     run_infercnv_analysis
+    conda deactivate
+
+    source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
+    conda activate pyscenic
     run_pyscenic_analysis
+    conda deactivate
+
+    source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
+    conda activate copyKAT
+    run_copykat_analysis
+    conda deactivate
 
     local timestamp=$(get_timestamp)
     local duration=$(( $(date +%s) - ${pipeline_start} ))

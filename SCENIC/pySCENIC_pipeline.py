@@ -7,6 +7,7 @@ import subprocess
 import glob
 import gzip
 import random
+import pyreadr
 
 # Third-party imports
 import numpy as np
@@ -47,42 +48,41 @@ class DataLoader:
     def get_analysis_paths(self, base_folder, data_folder, dataset_id, sample_id, cell_type=None, pruning=None):
         """
         Generate and create necessary file paths for analysis.
-
-        Args:
-            base_folder (str): Base directory for the analysis.
-            dataset_id (str): Dataset identifier.
-            sample_id (str): Sample identifier.
-            cell_type (str, optional): Cell type ('Tumor' or 'Non-Tumor').
-            pruning (bool, optional): Whether to use pruned or unpruned paths.
-
-        Returns:
-            dict: Dictionary containing paths to various files and directories.
         """
-        if cell_type and cell_type not in ['Tumor', 'Non-Tumor']:
-            raise ValueError("cell_type must be 'Tumor', 'Non-Tumor', or None")
+        # Allow tumor subcluster names (e.g., Tumor_s1) or standard cell types
+        if cell_type and not (cell_type in ['Tumor', 'Non-Tumor'] or cell_type.startswith('Tumor_')):
+            raise ValueError("cell_type must be 'Tumor', 'Non-Tumor', a tumor subcluster (Tumor_sX), or None")
 
-        # Define base paths
-        base_output = os.path.join(base_folder, dataset_id, sample_id)  # Base output directory
+        # Define base paths - different for tumor subclusters
+        if cell_type and cell_type.startswith('Tumor_'):
+            # For tumor subclusters, use the subcluster folder as base output
+            base_output = os.path.join(base_folder, dataset_id, sample_id, cell_type)
+            # AnnData file should still be in the main directory
+            anndata_path = os.path.join(base_folder, dataset_id, sample_id, 'anndata.h5ad')
+        else:
+            # Standard case
+            base_output = os.path.join(base_folder, dataset_id, sample_id)
+            anndata_path = os.path.join(base_output, 'anndata.h5ad')
+
         paths = {
             'base': base_folder,
             'databases': os.path.join(base_folder, "databases"),
             'raw_data': os.path.join(data_folder, dataset_id),
-            'output': base_output,  # Base output directory (not affected by pruning yet)
-            'figures': os.path.join(base_folder, dataset_id, sample_id, "figures")
+            'output': base_output,
+            'figures': os.path.join(base_output, "figures"),
+            'tumor_subclusters': os.path.join("/work/project/ladcol_020/scCNV/inferCNV/", dataset_id, sample_id, "tumor_subclusters.rds"),
+            'anndata': anndata_path  # This now points to the correct location
         }
-        # Add the additional nested folder
-        print(data_folder)
-        print(paths['raw_data'])
+
         # Ensure all directories exist
-        for folder in paths.values():
+        for folder in [paths['output'], paths['figures']]:
             os.makedirs(folder, exist_ok=True)
 
         # Adjust output path for pruning if applicable
         if pruning is not None:
             pruning_suffix = "pruned" if pruning else "unpruned"
-            paths['output'] = os.path.join(paths['output'], pruning_suffix)  # Update output path for pruning
-            os.makedirs(paths['output'], exist_ok=True)  # Ensure the pruned/unpruned directory exists
-            print(f"Updated output path for pruning: {paths['output']}")  # Debugging
+            paths['output'] = os.path.join(paths['output'], pruning_suffix)
+            os.makedirs(paths['output'], exist_ok=True)
 
         suffix = f"{cell_type}_" if cell_type else ""
 
@@ -97,7 +97,6 @@ class DataLoader:
                                        'outs',
                                        'raw_feature_bc_matrix'),
             'metadata': os.path.join(paths['raw_data'], 'GSE240822_GBM_ccRCC_RNA_metadata_CPTAC_samples.tsv.gz'),
-            'anndata': os.path.join(base_output, 'anndata.h5ad'),  # Always in the base output directory
             'filtered_loom': os.path.join(paths['output'], f'{suffix}filtered_scenic.loom'),
             'adjacencies': os.path.join(paths['output'], f'{suffix}adjacencies.csv'),
             'regulons': os.path.join(paths['output'], f'{suffix}reg.csv'),
@@ -105,7 +104,6 @@ class DataLoader:
             'aucell_mtx': os.path.join(paths['output'], f'{suffix}auc.csv')
         })
 
-        print(f"Generated paths: {paths}")  # Debugging
         return paths
 
     def read_expression_data(self):
@@ -117,18 +115,36 @@ class DataLoader:
         """
         print("Reading expression data from %s", self.paths['raw_matrix'])
         adata = sc.read_10x_mtx(self.paths['raw_matrix'], var_names='gene_symbols', cache=False)
-        adata = adata[:, np.random.choice(adata.obs_names,
-                                                 size=int(adata.shape[1] * 0.01),
-                                                 replace=False)]
         sc.pp.filter_cells(adata, min_genes=0)
 
         # Compute additional QC metrics
         adata.obs['n_genes'] = (adata.X > 0).sum(axis=1).A1
-        adata.obs['percent_mito'] = np.sum(adata[:, adata.var_names.str.startswith('MT-')].X, axis=1).A1 / np.sum(adata.X,
-                                                                                                                  axis=1).A1
+        adata.obs['percent_mito'] = np.sum(adata[:, adata.var_names.str.startswith('MT-')].X, axis=1).A1 / np.sum(
+            adata.X,
+            axis=1).A1
         adata.obs['n_counts'] = adata.X.sum(axis=1).A1
 
         return adata
+
+    def load_tumor_subclusters(self):
+        """
+        Load tumor subclusters from RDS file and return a DataFrame with consistent barcode format.
+
+        Returns:
+            pd.DataFrame: DataFrame with cell barcodes (converted to match AnnData format) and subcluster assignments
+        """
+        if not os.path.exists(self.paths['tumor_subclusters']):
+            print(f"Tumor subclusters file not found at {self.paths['tumor_subclusters']}")
+            return None
+
+        result = pyreadr.read_r(self.paths['tumor_subclusters'])
+        df = result[None]  # Extract the DataFrame from OrderedDict
+
+        # Convert barcode format from AAACGAACACTTGAGT.1 to AAACGAACACTTGAGT-1
+        df['cell'] = df['cell'].str.replace(r'\.\d+$', '-1', regex=True)
+
+        print(f"Loaded tumor subclusters with {len(df)} cells after barcode conversion")
+        return df
 
 
 class DataPreprocessor:
@@ -161,9 +177,10 @@ class DataPreprocessor:
         self.adata = self.adata[self.adata.obs['percent_mito'] < 0.15, :]
 
         # Print statistics after filtering
-        print("Counts per gene (min - max): %s - %s", np.sum(self.adata.X, axis=0).min(), np.sum(self.adata.X, axis=0).max())
+        print("Counts per gene (min - max): %s - %s", np.sum(self.adata.X, axis=0).min(),
+              np.sum(self.adata.X, axis=0).max())
         print("Cells detected per gene (min - max): %s - %s", np.sum(self.adata.X > 0, axis=0).min(),
-                    np.sum(self.adata.X > 0, axis=0).max())
+              np.sum(self.adata.X > 0, axis=0).max())
         print("Minimum counts per gene: %s", 3 * 0.01 * self.adata.X.shape[0])
         print("Minimum samples required: %s", 0.01 * self.adata.X.shape[0])
 
@@ -459,10 +476,8 @@ class ResultVisualizer:
         # Store results in AnnData object
         adata.obsm['X_umap'] = umap_result
 
-        # Ensure output directory exists
-        os.makedirs(self.paths['figures'], exist_ok=True)
-
         # Generate and save UMAP plots
+        sc.settings.figdir = self.paths['figures']
         sc.pl.umap(adata, color='cell_type.harmonized.cancer', title=f'Cell Type ({cell_type})',
                    save='_auc.png')
 
@@ -493,23 +508,24 @@ class ResultVisualizer:
         max_abs_value = np.max(np.abs(normalized_scores.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(normalized_scores, figsize=[12, 8], cmap=plt.cm.RdBu_r, xticklabels=False, yticklabels=True,
+        g = sns.clustermap(normalized_scores, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False,
+                           yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
-                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value,  vmax=max_abs_value)
+                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value,
+                           vmax=max_abs_value)
 
         # Customize heatmap appearance
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.grid(False)
         g.ax_heatmap.tick_params(axis='both', which='both', length=0)
-        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize = 24)
-        g.cax.yaxis.label.set_size(24)  # Adjust as needed
+        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0)
 
         # Save figure
         plt.savefig(os.path.join(self.paths['figures'], 'regulon_heatmap.png'), bbox_inches="tight")
         plt.close()
 
-    def plot_top_regulons(self, num_top_regulons=10):
+    def plot_top_regulons(self, num_top_regulons=30):
         """
         Plot heatmap of top regulons' activity across cell types.
         """
@@ -528,18 +544,18 @@ class ResultVisualizer:
         max_abs_value = np.max(np.abs(scaled_aucell_mtx.values))
 
         # Create heatmap with clustering
-        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 8], cmap=plt.cm.RdBu_r, xticklabels=False,
+        g = sns.clustermap(scaled_aucell_mtx.T, figsize=[12, 6.5], cmap=plt.cm.RdBu_r, xticklabels=False,
                            yticklabels=True,
                            col_cluster=True, row_cluster=True, tree_kws={'linewidths': 0},
                            cbar_kws={'location': 'right', 'label': 'Z-Score Normalized Regulon Activity'},
-                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value, vmax=max_abs_value)
+                           dendrogram_ratio=0.1, cbar_pos=(0.92, .3, .015, 0.4), vmin=-max_abs_value,
+                           vmax=max_abs_value)
 
         # Customize heatmap appearance
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.grid(False)
         g.ax_heatmap.tick_params(axis='both', which='both', length=0)
-        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize = 24)
-        g.cax.yaxis.label.set_size(24)  # Adjust as needed
+        g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0)
 
         # Save figure
         plt.savefig(os.path.join(self.paths['figures'], 'tumor_regulon_heatmap.png'), bbox_inches="tight")
@@ -571,20 +587,15 @@ class WorkflowManager:
     def preprocessing_workflow(self):
         """
         Main preprocessing workflow with all visualizations.
-
-        Returns:
-            AnnData: Annotated data object after preprocessing.
         """
         print("Starting preprocessing workflow")
 
-        # Step 1: Load expression data
+        # Initialize DataLoader without cell_type or pruning for preprocessing
         print("Step 1: Loading expression data")
-        data_loader = DataLoader(self.base_folder, self.data_folder, self.dataset_id, self.sample_id, self.cell_type, self.pruning)
-        adata = data_loader.read_expression_data()
+        data_loader = DataLoader(self.base_folder, self.data_folder, self.dataset_id, self.sample_id)
 
-        # Update paths for specific cell type
-        data_loader.paths = data_loader.get_analysis_paths(self.base_folder, self.data_folder, self.dataset_id, self.sample_id,
-                                                           self.cell_type)
+        # Step 1: Load expression data
+        adata = data_loader.read_expression_data()
 
         # Step 2: Filter and preprocess data
         print("Step 2: Filtering and preprocessing data")
@@ -598,9 +609,10 @@ class WorkflowManager:
         cluster_visualizer = ClusterVisualizer(adata, data_loader.paths)
         adata = cluster_visualizer.cluster_and_umap(resolution=0.4)
 
-        # Step 4: Save results
-        print("Step 4: Saving results to %s", data_loader.paths['anndata'])
-        adata.write(data_loader.paths['anndata'])
+        # Step 4: Save results to the main directory (not subcluster directory)
+        main_anndata_path = os.path.join(self.base_folder, self.dataset_id, self.sample_id, 'anndata.h5ad')
+        adata.write(main_anndata_path)
+        print(f"Preprocessed data saved to {main_anndata_path}")
 
         print("Preprocessing workflow complete")
         return adata
@@ -610,13 +622,13 @@ class WorkflowManager:
         Run complete PySCENIC workflow with visualizations.
         """
         print("Starting PySCENIC workflow for dataset %s, sample %s, cell type %s", self.dataset_id,
-                    self.sample_id, self.cell_type)
+              self.sample_id, self.cell_type)
 
         # Initialize DataLoader with pruning flag
-        data_loader = DataLoader(self.base_folder, self.data_folder, self.dataset_id, self.sample_id, self.cell_type, self.pruning)
-        print(f"Generated paths: {data_loader.paths}")  # Debugging: Verify paths
+        data_loader = DataLoader(self.base_folder, self.data_folder, self.dataset_id, self.sample_id, self.cell_type,
+                                 self.pruning)
 
-        # Load AnnData object
+        # Load AnnData object - we know it exists because main() checked
         adata = sc.read_h5ad(data_loader.paths['anndata'])
 
         # Subset the data based on cell_type
@@ -635,45 +647,45 @@ class WorkflowManager:
 
         print("Starting PySCENIC workflow for: %s", self.cell_type or 'whole dataset')
 
-        # # Step 1: Create the loom file
-        # print("Step 1: Creating the desired loom file")
-        # grn_inference = GRNInference(data_loader.paths)
-        # grn_inference.create_loom_file(adata)
-        #
-        # # Prepare commands
-        # grn_inference_config = grn_inference.run_grn_inference()
-        # ctx_inference_config = grn_inference.run_ctx_inference(self.pruning)
-        # aucell_config = grn_inference.run_aucell()
-        #
-        # # Step 2: Run GRN inference
-        # print("Step 2: Running GRN inference")
-        # print("Executing command: %s", grn_inference_config['command'])
-        # subprocess.run(grn_inference_config['command'], shell=True, check=True)
-        # adjacencies = pd.read_csv(grn_inference_config['output_path'], index_col=False)
-        #
-        # # Step 3: Run context-specific inference
-        # print("Step 3: Running context-specific inference")
-        # print("Executing command: %s", ctx_inference_config['command'])
-        # subprocess.run(ctx_inference_config['command'], shell=True, check=True)
-        # regulons = pd.read_csv(ctx_inference_config['output_path'], header=1)
-        #
-        # # Step 4: Visualize gene distribution
+        # Step 1: Create the loom file
+        print("Step 1: Creating the desired loom file")
+        grn_inference = GRNInference(data_loader.paths)
+        grn_inference.create_loom_file(adata)
+
+        # Prepare commands
+        grn_inference_config = grn_inference.run_grn_inference()
+        ctx_inference_config = grn_inference.run_ctx_inference(self.pruning)
+        aucell_config = grn_inference.run_aucell()
+
+        # Step 2: Run GRN inference
+        print("Step 2: Running GRN inference")
+        print("Executing command: %s", grn_inference_config['command'])
+        subprocess.run(grn_inference_config['command'], shell=True, check=True)
+        adjacencies = pd.read_csv(grn_inference_config['output_path'], index_col=False)
+
+        # Step 3: Run context-specific inference
+        print("Step 3: Running context-specific inference")
+        print("Executing command: %s", ctx_inference_config['command'])
+        subprocess.run(ctx_inference_config['command'], shell=True, check=True)
+        regulons = pd.read_csv(ctx_inference_config['output_path'], header=1)
+
+        # Step 4: Visualize gene distribution
         print("Step 4: Visualizing gene distribution")
         gene_counts = np.sum(adata.X > 0, axis=1)
         result_visualizer = ResultVisualizer(data_loader.paths)
         result_visualizer.plot_gene_distribution(gene_counts, self.cell_type)
-        #
-        # # Step 5: Run AUCell
-        # print("Step 5: Running AUCell")
-        # print("Executing command: %s", aucell_config['command'])
-        # subprocess.run(aucell_config['command'], shell=True, check=True)
-        # lf = lp.connect(aucell_config['output_path'], mode='r+', validate=False)
-        # aucell_mtx = pd.DataFrame(lf.ca.RegulonsAUC, index=lf.ca.CellID)
-        # lf.close()
-        #
-        # # Step 6: Dimensionality reduction on AUCell results
-        # print("Step 6: Dimensionality reduction on AUCell results")
-        # result_visualizer.aucell_dimensionality_reduction(aucell_mtx, adata, self.cell_type)
+
+        # Step 5: Run AUCell
+        print("Step 5: Running AUCell")
+        print("Executing command: %s", aucell_config['command'])
+        subprocess.run(aucell_config['command'], shell=True, check=True)
+        lf = lp.connect(aucell_config['output_path'], mode='r+', validate=False)
+        aucell_mtx = pd.DataFrame(lf.ca.RegulonsAUC, index=lf.ca.CellID)
+        lf.close()
+
+        # Step 6: Dimensionality reduction on AUCell results
+        print("Step 6: Dimensionality reduction on AUCell results")
+        result_visualizer.aucell_dimensionality_reduction(aucell_mtx, adata, self.cell_type)
 
         # Step 7: Visualize AUCell results
         print("Step 7: Visualization of the AUCell results")
@@ -683,6 +695,84 @@ class WorkflowManager:
             result_visualizer.create_regulon_heatmap()
 
         print("Workflow completed successfully.")
+
+    def run_tumor_subcluster_analysis(self):
+        """
+        Run PySCENIC workflow for each tumor subcluster with output in subcluster folders.
+        """
+        print("Starting tumor subcluster analysis")
+
+        # Initialize DataLoader to get paths and load tumor subclusters
+        data_loader = DataLoader(self.base_folder, self.data_folder, self.dataset_id, self.sample_id)
+        tumor_subclusters = data_loader.load_tumor_subclusters()
+
+        if tumor_subclusters is None or len(tumor_subclusters) == 0:
+            print("No tumor subclusters found or file not available. Skipping subcluster analysis.")
+            return
+
+        # Get unique subclusters
+        unique_subclusters = tumor_subclusters['infercnv'].unique()
+        print(f"Found {len(unique_subclusters)} tumor subclusters: {unique_subclusters}")
+
+        if len(unique_subclusters) <= 1:
+            print("Only one tumor subcluster found. Skipping subcluster analysis.")
+            return
+
+        # Load the full AnnData object
+        adata = sc.read_h5ad(data_loader.paths['anndata'])
+
+        # Run PySCENIC for each subcluster
+        for subcluster in unique_subclusters:
+            subcluster_name = f"Tumor_{subcluster.split('_')[-1]}"  # e.g., Tumor_s1
+
+            print(f"\nProcessing subcluster: {subcluster_name}")
+
+            # Get cells for this subcluster (barcodes already converted to match AnnData format)
+            subcluster_cells = tumor_subclusters[tumor_subclusters['infercnv'] == subcluster]['cell'].values
+            # Find intersection with AnnData barcodes
+            valid_cells = set(subcluster_cells).intersection(set(adata.obs_names))
+
+            if len(valid_cells) == 0:
+                print(f"No matching cells found in AnnData for subcluster {subcluster_name}. Skipping.")
+                continue
+
+            print(f"Running PySCENIC for {len(valid_cells)} cells in {subcluster_name}")
+
+            # Create subset AnnData
+            subcluster_adata = adata[adata.obs_names.isin(valid_cells)].copy()
+
+            # Run PySCENIC workflow for this subcluster
+            try:
+                # The paths will automatically be created in the subcluster folder
+                grn_inference = GRNInference(
+                    data_loader.get_analysis_paths(
+                        self.base_folder,
+                        self.data_folder,
+                        self.dataset_id,
+                        self.sample_id,
+                        cell_type=subcluster_name,
+                        pruning=self.pruning
+                    )
+                )
+
+                # Rest of the SCENIC workflow remains the same...
+                grn_inference.create_loom_file(subcluster_adata)
+
+                # Prepare commands
+                grn_inference_config = grn_inference.run_grn_inference()
+                ctx_inference_config = grn_inference.run_ctx_inference(self.pruning)
+                aucell_config = grn_inference.run_aucell()
+
+                # Run the commands
+                subprocess.run(grn_inference_config['command'], shell=True, check=True)
+                subprocess.run(ctx_inference_config['command'], shell=True, check=True)
+                subprocess.run(aucell_config['command'], shell=True, check=True)
+
+                print(f"Successfully completed PySCENIC for subcluster {subcluster_name}")
+
+            except Exception as e:
+                print(f"Error running PySCENIC for subcluster {subcluster_name}: {str(e)}")
+                continue
 
 
 def parse_arguments():
@@ -702,6 +792,8 @@ def parse_arguments():
                         help="Specific cell type to subset (e.g., 'Tumor' or 'Non-Tumor'). Defaults to all cells.")
     parser.add_argument("--prune", type=str, default=None,
                         help="Whether to use pruning during GRN inference. Options: 'True', 'False', or None (default).")
+    parser.add_argument("--run_subclusters", action='store_true',
+                        help="Run analysis on tumor subclusters if available.")
 
     args = parser.parse_args()
 
@@ -746,20 +838,25 @@ def main():
     print(f"Sample ID: {args.sample_id}")
     print(f"Cell type: {args.cell_type}")
     print(f"Prune flag: {args.prune}")
+    print(f"Run subclusters: {args.run_subclusters}")
 
     # Initialize workflow manager
-    workflow_manager = WorkflowManager(args.base_folder, args.data_folder, args.dataset_id, args.sample_id, args.cell_type, args.prune)
+    workflow_manager = WorkflowManager(args.base_folder, args.data_folder, args.dataset_id, args.sample_id,
+                                       args.cell_type, args.prune)
 
-    # Run preprocessing only if both cell_type and pruning are None
-    if args.cell_type is None and args.prune is None:
-        print("Running preprocessing workflow as cell_type and pruning are None.")
+    # Check if we need to run preprocessing
+    anndata_path = os.path.join(args.base_folder, args.dataset_id, args.sample_id, 'anndata.h5ad')
+    if not os.path.exists(anndata_path):
+        print("AnnData file not found. Running preprocessing workflow...")
         workflow_manager.preprocessing_workflow()
     else:
-        print("Skipping preprocessing workflow as cell_type or pruning is set.")
+        print(f"Found existing AnnData file at {anndata_path}")
 
-    # Always run PySCENIC workflow
+    # Run PySCENIC workflow
     workflow_manager.run_pyscenic_workflow()
 
+    # Run tumor subcluster analysis
+    workflow_manager.run_tumor_subcluster_analysis()
 
 if __name__ == "__main__":
     main()
