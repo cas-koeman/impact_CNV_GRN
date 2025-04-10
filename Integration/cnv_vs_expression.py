@@ -1,11 +1,11 @@
-import loompy as lp
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from scipy.stats import kruskal
 import os
-from typing import List, Tuple, Dict, Optional
+from typing import List, Optional
+
+import loompy as lp
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from scipy.stats import kruskal
 
 
 class CNVExpressionAnalyzer:

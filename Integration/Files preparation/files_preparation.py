@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # Pipeline for the preparation of the count matrix and (extended) CNV matrices
 
+import gzip
 import os
+import random
 import sys
-import numpy as np
+
 import pandas as pd
 import scanpy as sc
-import random
-import gzip
 
 
 def create_count_matrix(
@@ -58,7 +58,7 @@ def create_count_matrix(
     # Filter metadata
     metadata_filtered = metadata[
         (metadata['GEO.sample'].str.startswith(sample_id))
-        ]
+    ]
     print(f"Filtered metadata dimensions: {len(metadata_filtered)} rows")
 
     # Check if any barcodes found after filtering
@@ -395,6 +395,7 @@ def run_cnv_analysis(base_dir, dataset_id, sample_id, min_genes=200, min_cells=3
         "extended_cnv_matrix": extended_cnv_file,
         "output_dir": paths["output_dir"]
     }
+
 
 def main():
     """

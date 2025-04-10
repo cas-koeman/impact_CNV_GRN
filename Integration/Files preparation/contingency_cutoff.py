@@ -1,16 +1,13 @@
 import os
+import warnings
+from typing import Dict, List
+
+import loompy as lp
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import warnings
-import loompy as lp
 from scipy.stats import chi2_contingency
-from typing import Dict, Tuple, Optional, List
-import plotly.graph_objects as go
-from typing import Dict, List, Tuple, Optional, Union
-from scipy.stats import zscore
-import sys
 
 
 class CNVThresholdAnalyzer:
@@ -103,6 +100,7 @@ class CNVThresholdAnalyzer:
             Dictionary with threshold values as keys and analysis results as values
         """
         print(f"\nAnalyzing sample: {aliquot}")
+        print("========================================")
 
         # Load data
         loom_data = self.load_loom_data(dataset_id, aliquot)
@@ -128,7 +126,7 @@ class CNVThresholdAnalyzer:
         for threshold in np.arange(0, 1.01, 0.1):
             # Round to handle floating point precision issues
             threshold = round(threshold, 1)
-            print(f"  Analyzing threshold: {threshold}")
+            print(f"\n  Analyzing threshold: {threshold}")
 
             # Analyze with current threshold
             results = self._analyze_threshold(
@@ -203,15 +201,22 @@ class CNVThresholdAnalyzer:
             except Exception as e:
                 continue
 
-        # Filter out empty rows/columns
-        contingency_table = contingency_table.loc[
-            contingency_table.sum(axis=1) > 0,
-            contingency_table.sum(axis=0) > 0
-        ]
+        # Print the contingency table for this threshold
+        print(f"\nContingency Table for threshold {threshold}:")
+        print("--------------------------------")
+        print(contingency_table)
+        print("\nTF CNV Status Counts:")
+        print(tf_cnv_counts)
+        print("--------------------------------")
 
-        # Calculate chi-square test if table is not empty
+        # Add very small number to any cells that are 0 (but keep original counts)
+        # Only if at least one cell has a count > 0
+        if contingency_table.sum().sum() > 0:
+            contingency_table = contingency_table.replace(0, 1e-10)
+
+        # Calculate chi-square test if table has any counts
         chi2_result = None
-        if not contingency_table.empty:
+        if contingency_table.sum().sum() > 0:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 try:
@@ -225,6 +230,7 @@ class CNVThresholdAnalyzer:
                         'degrees_of_freedom': dof,
                         'expected_frequencies': expected
                     }
+                    print(f"Chi-square p-value: {pval:.4f}")
                 except Exception:
                     chi2_result = {
                         'chi2_statistic': None,
@@ -289,48 +295,65 @@ class CNVThresholdAnalyzer:
         table.to_csv(file_path)
         print(f"Summary table saved to {file_path}")
 
-    def create_heatmap(self, log_transform: bool = True) -> plt.Figure:
+    def plot_pvalue_boxplot(self, csv_file: str, output_file: str = None) -> None:
         """
-        Create a heatmap visualization of p-values across all samples and thresholds.
+        Create a boxplot of p-values per cutoff from a CSV file.
 
         Args:
-            log_transform: Whether to apply -log10 transformation to p-values
-                           (better for visualization)
-
-        Returns:
-            Matplotlib figure
+            csv_file: Path to the CSV file containing p-values
+            output_file: Optional path to save the plot (if None, will display)
         """
-        table = self.create_summary_table()
+        # Read the CSV file
+        df = pd.read_csv(csv_file, index_col=0)
 
-        # Apply -log10 transform for better visualization if requested
-        if log_transform:
-            # Replace NaN with 1.0 (least significant p-value) before transformation
-            plot_data = -np.log10(table.fillna(1.0))
-            cmap = "YlOrRd"  # Yellow-Orange-Red (higher values = more significant)
-            title = "-log10(p-value) of CNV-Regulon Association"
-        else:
-            plot_data = table
-            cmap = "YlOrRd_r"  # Reversed (lower p-values = more significant)
-            title = "p-value of CNV-Regulon Association"
+        # Skip the first row (threshold 0.0)
+        df = df.iloc[1:]
 
-        # Create figure
-        plt.figure(figsize=(12, 8))
-        ax = sns.heatmap(
-            plot_data,
-            cmap=cmap,
-            annot=True,
-            fmt=".2f" if log_transform else ".2e",
-            linewidths=0.5,
-            cbar_kws={'label': '-log10(p-value)' if log_transform else 'p-value'}
-        )
+        # Convert cutoff index to percentages (0.1 -> 10%)
+        df.index = [f"{float(x) * 100:.0f}%" for x in df.index]
 
-        # Adjust labels
-        plt.title(title)
-        plt.xlabel("Sample")
-        plt.ylabel("CNV Threshold")
+        # Transpose the dataframe to have cutoffs as columns
+        df = df.T
+
+        # Melt the dataframe for seaborn plotting
+        df_melted = df.reset_index().melt(id_vars='index', var_name='Cutoff', value_name='p-value')
+        df_melted = df_melted.rename(columns={'index': 'Sample'})
+
+        # Set style
+        sns.set_style("ticks")
+
+        # Create the boxplot
+        ax = sns.violinplot(data=df_melted, x='Cutoff', y='p-value', color="white",
+                            width=0.6, linewidth=1, showfliers=False)
+
+        # Add jittered points to show individual samples with viridis colormap
+        palette = sns.color_palette("icefire", n_colors=len(df_melted['Sample'].unique()))
+        sns.stripplot(data=df_melted, x='Cutoff', y='p-value',
+                      hue='Sample', palette=palette, alpha=0.5, jitter=0.2, size=5)
+
+        # Customize the plot
+        plt.xlabel('Threshold of cells with CNV (%)', fontsize=12)
+        plt.ylabel('p-value', fontsize=12)
+
+        # Remove top and right borders
+        sns.despine(offset=10, trim=True)
+
+        # Add significance threshold line
+        plt.axhline(y=0.03, color='black', linestyle='--', linewidth=0.7, alpha=0.3)
+
+        # Adjust layout
         plt.tight_layout()
+        plt.legend().remove()
 
-        return plt.gcf()
+        # Save or show the plot
+        if output_file:
+            plt.savefig(output_file,
+                        dpi=300,
+                        bbox_inches='tight',
+                        facecolor='white')
+            print(f"Plot saved to {output_file}")
+        else:
+            plt.show()
 
 
 def main():
@@ -365,16 +388,11 @@ def main():
     print(summary_table)
     analyzer.save_summary_table("cnv_threshold_summary.csv")
 
-    # # Create and save heatmap
-    # print("\nCreating heatmap visualization...")
-    # fig = analyzer.create_heatmap()
-    # fig.savefig("cnv_threshold_heatmap.png", dpi=300, bbox_inches='tight')
-    #
-    # # Also create an untransformed version
-    # fig2 = analyzer.create_heatmap(log_transform=False)
-    # fig2.savefig("cnv_threshold_heatmap_raw.png", dpi=300, bbox_inches='tight')
-    #
-    # print("\nAnalysis complete!")
+    # Create and save boxplot
+    print("\nCreating boxplot visualization...")
+    analyzer.plot_pvalue_boxplot("cnv_threshold_summary.csv", "pvalue_boxplot_clean.png")
+
+    print("\nAnalysis complete!")
 
 
 if __name__ == "__main__":

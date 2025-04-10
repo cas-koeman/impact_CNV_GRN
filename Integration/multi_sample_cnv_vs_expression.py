@@ -1,8 +1,9 @@
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from scipy import stats
 
 
@@ -176,6 +177,7 @@ class MultiSampleCNVExpressionAnalyzer:
         plt.savefig('zscore_cnv_scatter_all_datasets.png', dpi=300, bbox_inches='tight')
         plt.close()
         print("Scatterplot with trendline saved as 'zscore_cnv_scatter_all_datasets.png'.")
+
 
 # Example usage:
 sample_ids = [

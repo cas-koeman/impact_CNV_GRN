@@ -1,14 +1,14 @@
-import loompy as lp
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 import warnings
-from scipy.stats import kruskal, zscore, chi2_contingency
-from statsmodels.graphics.mosaicplot import mosaic
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Optional
+
+import loompy as lp
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
+from scipy.stats import chi2_contingency
+from statsmodels.graphics.mosaicplot import mosaic
 
 
 class SCENICDataLoader:
@@ -17,7 +17,6 @@ class SCENICDataLoader:
     Attributes:
         base_dir (str): Base directory path for data files
         loom_data (dict): Loaded loom file data
-        expression_matrix (pd.DataFrame): Filtered expression matrix
         cnv_matrix (pd.DataFrame): Processed CNV matrix
     """
 
@@ -25,7 +24,6 @@ class SCENICDataLoader:
         """Initialize with base directory path."""
         self.base_dir = base_dir
         self.loom_data: Optional[dict] = None
-        self.expression_matrix: Optional[pd.DataFrame] = None
         self.cnv_matrix: Optional[pd.DataFrame] = None
 
     def load_all_data(self, dataset_id: str, aliquot: str) -> None:
@@ -36,7 +34,6 @@ class SCENICDataLoader:
             aliquot: Sample aliquot ID
         """
         self.load_loom_data(dataset_id, aliquot)
-        self.load_expression_matrix(dataset_id, aliquot)
         self.load_cnv_matrix(dataset_id, aliquot)
 
     def load_loom_data(self, dataset_id: str, aliquot: str) -> dict:
@@ -52,7 +49,7 @@ class SCENICDataLoader:
         """
         loom_path = os.path.join(
             self.base_dir, "scGRNi/RNA/SCENIC",
-            dataset_id, aliquot, "pyscenic_output.loom"
+            dataset_id, aliquot, "Tumor_pyscenic_output.loom"
         )
 
         if not os.path.exists(loom_path):
@@ -77,25 +74,6 @@ class SCENICDataLoader:
             for i, name in enumerate(loom_connection.ca['RegulonsAUC'].dtype.names)
         }
 
-    def load_expression_matrix(self, dataset_id: str, aliquot: str) -> pd.DataFrame:
-        """Load and filter expression matrix."""
-        expr_path = os.path.join(
-            self.base_dir, "integration_GRN_CNV",
-            dataset_id, aliquot, "raw_count_matrix.txt"
-        )
-
-        if not os.path.exists(expr_path):
-            raise FileNotFoundError(f"Expression matrix not found at {expr_path}")
-
-        df = pd.read_csv(expr_path, sep='\t', index_col=0)
-
-        # Apply quality filters
-        gene_filter = (df > 0).sum(axis=1) >= 200
-        cell_filter = (df.loc[gene_filter] > 0).sum(axis=0) >= 3
-
-        self.expression_matrix = df.loc[gene_filter, cell_filter]
-        return self.expression_matrix
-
     def load_cnv_matrix(self, dataset_id: str, aliquot: str) -> pd.DataFrame:
         """Load and transform CNV matrix."""
         cnv_path = os.path.join(
@@ -109,188 +87,6 @@ class SCENICDataLoader:
         self.cnv_matrix = pd.read_csv(cnv_path, sep='\t', index_col=0) * 2 - 2
         return self.cnv_matrix
 
-    def get_common_features(self) -> Tuple[pd.Index, pd.Index]:
-        """Get intersection of genes and cells across loaded data."""
-        if self.expression_matrix is None or self.cnv_matrix is None:
-            raise ValueError("Must load both expression and CNV data first")
-
-        common_genes = self.expression_matrix.index.intersection(
-            self.cnv_matrix.index
-        )
-        common_cells = self.expression_matrix.columns.intersection(
-            self.cnv_matrix.columns
-        )
-
-        return common_genes, common_cells
-
-
-class SCENICPlotter:
-    """Handles all visualization tasks for SCENIC data."""
-
-    def __init__(self, data_loader: SCENICDataLoader):
-        """Initialize with data loader and output directory."""
-        self.loader = data_loader
-
-        # Processed data containers
-        self.regulons_auc_df: Optional[pd.DataFrame] = None
-        self.sorted_regulons: Optional[pd.DataFrame] = None
-
-    def process_regulon_data(self) -> None:
-        """Process loom data into analysis-ready DataFrames."""
-        if self.loader.loom_data is None:
-            raise ValueError("No loom data loaded")
-
-        loom_data = self.loader.loom_data
-        tumor_ids = loom_data['cell_ids'][loom_data['tumor_cell_indices']]
-        auc_matrix = loom_data['regulons_auc'][loom_data['tumor_cell_indices'], :]
-
-        self.regulons_auc_df = pd.DataFrame(
-            auc_matrix.T,
-            index=loom_data['regulon_names'],
-            columns=tumor_ids
-        )
-        self.regulons_auc_df['target_genes'] = self.regulons_auc_df.index.map(
-            loom_data['target_genes']
-        )
-
-        # Calculate average activity
-        self.regulons_auc_df['average_activity'] = \
-            self.regulons_auc_df.iloc[:, :-1].mean(axis=1)
-
-        # Sort regulons by activity
-        self.sorted_regulons = self.regulons_auc_df.sort_values(
-            'average_activity', ascending=False
-        )
-        self.sorted_regulons['num_target_genes'] = \
-            self.sorted_regulons['target_genes'].apply(len)
-
-    def plot_regulon_activity_vs_cnv(self) -> None:
-        """Plot regulon activity vs average CNV of target genes."""
-        if self.regulons_auc_df is None:
-            self.process_regulon_data()
-
-        if self.loader.cnv_matrix is None:
-            raise ValueError("CNV matrix not loaded")
-
-        cnv_matrix = self.loader.cnv_matrix
-        regulons_activity = self.regulons_auc_df.drop(
-            ['target_genes', 'average_activity'], axis=1
-        ).mean(axis=1)
-
-        # Calculate average CNV per regulon
-        avg_cnvs, std_cnvs = [], []
-        for genes in self.regulons_auc_df['target_genes']:
-            genes = [g.strip() for g in genes if g.strip() in cnv_matrix.index]
-            if genes:
-                avg_cnvs.append(cnv_matrix.loc[genes].mean().mean())
-                std_cnvs.append(cnv_matrix.loc[genes].mean().std())
-            else:
-                avg_cnvs.append(np.nan)
-                std_cnvs.append(np.nan)
-
-        plot_data = pd.DataFrame({
-            'Average_CNV': avg_cnvs,
-            'CNV_StdDev': std_cnvs,
-            'Regulon_Activity': regulons_activity
-        }).dropna()
-
-        # Create plot
-        plt.figure(figsize=(10, 6))
-        sns.scatterplot(
-            x='Average_CNV',
-            y='Regulon_Activity',
-            hue='Regulon_Activity',
-            data=plot_data,
-            palette='coolwarm',
-            s=40,
-            alpha=1,
-            edgecolor='none'
-        )
-
-        plt.errorbar(
-            x=plot_data['Average_CNV'],
-            y=plot_data['Regulon_Activity'],
-            xerr=plot_data['CNV_StdDev'],
-            fmt='none',
-            ecolor='gray',
-            alpha=0.4
-        )
-
-        # Label top regulons
-        top_regulons = plot_data.nlargest(5, 'Regulon_Activity')
-        for regulon, row in top_regulons.iterrows():
-            plt.text(
-                row['Average_CNV'],
-                row['Regulon_Activity'] + 0.001,
-                regulon,
-                fontsize=10,
-                ha='center'
-            )
-
-        plt.xlabel('Average CNV of Target Genes')
-        plt.ylabel('Average Regulon Activity')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.savefig(
-            os.path.join('regulon_activity_vs_cnv.png'),
-            dpi=300, bbox_inches='tight'
-        )
-        plt.close()
-
-    def plot_cnv_zscore_distribution(self) -> None:
-        """Plot distribution of z-scores by CNV status."""
-        if self.loader.expression_matrix is None or self.loader.cnv_matrix is None:
-            raise ValueError("Expression and CNV data must be loaded first")
-
-        common_genes, common_cells = self.loader.get_common_features()
-        z_scores = self.loader.expression_matrix.loc[common_genes, common_cells].apply(
-            zscore, axis=1
-        )
-        cnv_data = self.loader.cnv_matrix.loc[common_genes, common_cells]
-
-        # Combine into long format
-        results = []
-        for cell in common_cells:
-            for gene in common_genes:
-                results.append({
-                    'Gene': gene,
-                    'Cell': cell,
-                    'CNV': cnv_data.loc[gene, cell],
-                    'Z-score': z_scores.loc[gene, cell]
-                })
-
-        results_df = pd.DataFrame(results)
-        results_df['CNV_Status'] = results_df['CNV'].apply(
-            lambda x: 'Loss' if x < 0 else ('Gain' if x > 0 else 'Neutral')
-        )
-
-        # Create plots
-        plt.figure(figsize=(12, 5))
-
-        plt.subplot(121)
-        sns.boxplot(
-            x='CNV_Status',
-            y='Z-score',
-            data=results_df,
-            order=['Loss', 'Neutral', 'Gain']
-        )
-        plt.title('Z-score Distribution by CNV Status')
-
-        plt.subplot(122)
-        sns.violinplot(
-            x='CNV_Status',
-            y='Z-score',
-            data=results_df,
-            order=['Loss', 'Neutral', 'Gain']
-        )
-        plt.title('Z-score Density by CNV Status')
-
-        plt.tight_layout()
-        plt.savefig(
-            os.path.join('cnv_zscore_distributions.png'),
-            dpi=300, bbox_inches='tight'
-        )
-        plt.close()
-
 
 class CNVRegulonAnalyzer:
     """Analyzes relationships between CNV patterns and regulon activity for a cell population."""
@@ -301,7 +97,6 @@ class CNVRegulonAnalyzer:
         self.sample_name = sample_name  # Store the sample name
         print("\nInitialized CNVRegulonAnalyzer")
         print(f"Sample: {self.sample_name}")
-        print(f"Expression matrix loaded: {self.loader.expression_matrix is not None}")
         print(f"CNV matrix loaded: {self.loader.cnv_matrix is not None}")
         print(f"Loom data loaded: {self.loader.loom_data is not None}\n")
 
@@ -369,156 +164,201 @@ class CNVRegulonAnalyzer:
         self._analyze_all_regulons(auc_matrix, cell_population)
 
     def _analyze_all_regulons(self, auc_matrix: np.ndarray, population: str) -> None:
+        """Analyze CNV-regulon relationships for all regulons on a per-cell basis."""
         regulon_names = self.loader.loom_data['regulon_names']
         target_genes = self.loader.loom_data['target_genes']
         cnv_matrix = self.loader.cnv_matrix
 
-        # Initialize contingency table with zeros
-        contingency_table = pd.DataFrame(
+        # Get cell IDs for this population
+        cell_indices = np.where(self.loader.loom_data['all_cell_types'] == population)[0]
+        cell_ids = self.loader.loom_data['cell_ids'][cell_indices]
+
+        # Handle cell ID format conversion
+        cell_id_map = {}
+        for loom_id in cell_ids:
+            if '-' in str(loom_id):
+                barcode, suffix = str(loom_id).split('-')
+                cnv_style_id = f"{barcode}.{suffix}"
+                if cnv_style_id in cnv_matrix.columns:
+                    cell_id_map[loom_id] = cnv_style_id
+
+        # Print mapping statistics
+        print(f"\nCell ID mapping:")
+        print(f"- Total cells in population '{population}': {len(cell_ids)}")
+        print(f"- Successfully mapped cells: {len(cell_id_map)}")
+
+        if len(cell_id_map) == 0:
+            print("\nERROR: All cell ID mapping attempts failed! Cannot proceed with analysis.")
+            return
+
+        # Initialize full contingency table (3x3)
+        full_contingency_table = pd.DataFrame(
             0,
             index=['TF Loss', 'TF Neutral', 'TF Gain'],
             columns=['Target Loss', 'Target Neutral', 'Target Gain']
         )
 
-        # Dictionary to store TF CNV status counts (only for TFs in CNV file)
-        tf_cnv_counts = {'Loss': 0, 'Neutral': 0, 'Gain': 0}
-        tf_status_details = {}  # Store details per TF
-        regulon_stats = []
+        # Initialize simplified 2x2 table (only gains/losses)
+        simplified_table = pd.DataFrame(
+            0,
+            index=['TF Loss', 'TF Gain'],
+            columns=['Target Loss', 'Target Gain']
+        )
 
-        # Counters for tracking regulons and target genes
+        # Track statistics
         total_regulons = 0
         regulons_with_tf_in_cnv = 0
+        total_cells_analyzed = 0
         regulons_skipped = 0
-        total_target_genes = 0  # New counter for target genes
+        total_cell_gene_pairs = 0
 
-        for regulon in regulon_names:
+        print(f"\nAnalyzing regulons across {len(cell_id_map)} matched cells in population '{population}'")
+
+        # Main analysis loop
+        progress_step = max(1, len(regulon_names) // 10)
+        for i, regulon in enumerate(regulon_names):
+            if i % progress_step == 0:
+                print(f"Progress: {i}/{len(regulon_names)} regulons analyzed ({i / len(regulon_names) * 100:.1f}%)")
+
             total_regulons += 1
             try:
-                # Extract TF name from regulon (format: TF_MOTIF) and remove (+) suffix
                 tf_name = regulon.split('_')[0].replace('(+)', '')
 
-                # Skip this regulon if TF is not in CNV matrix
                 if tf_name not in cnv_matrix.index:
                     regulons_skipped += 1
                     continue
 
                 regulons_with_tf_in_cnv += 1
-
-                # Get CNV status for TF
-                tf_status = self._get_cnv_status(tf_name, cnv_matrix)
-
-                # Update TF CNV counts and store details
-                tf_cnv_counts[tf_status] += 1
-                tf_status_details[tf_name] = tf_status
-
-                # Calculate CNV status for target genes
-                target_status_counts = {'Gain': 0, 'Loss': 0, 'Neutral': 0}
                 target_genes_list = target_genes.get(regulon, [])
-                total_target_genes += len(target_genes_list)  # Add to target gene counter
+                target_genes_in_cnv = [g for g in target_genes_list if g in cnv_matrix.index]
 
-                for gene in target_genes_list:
-                    # Get CNV status for this target gene
-                    target_status = self._get_cnv_status(gene, cnv_matrix)
-                    target_status_counts[target_status] += 1
+                if not target_genes_in_cnv:
+                    continue
 
-                    # Update contingency table for each target gene
-                    row_name = f"TF {tf_status}"
-                    col_name = f"Target {target_status}"
-                    contingency_table.loc[row_name, col_name] += 1
+                # Cell-level analysis
+                for loom_cell_id, cnv_cell_id in cell_id_map.items():
+                    total_cells_analyzed += 1
 
-                # Store regulon statistics
-                total_targets = sum(target_status_counts.values())
-                if total_targets > 0:
-                    target_percentages = {
-                        k: v / total_targets for k, v in target_status_counts.items()
-                    }
-                else:
-                    target_percentages = {'Gain': 0, 'Loss': 0, 'Neutral': 1}
+                    # Get TF CNV status
+                    tf_cnv = cnv_matrix.loc[tf_name, cnv_cell_id]
+                    tf_status = 'Gain' if tf_cnv > 0 else ('Loss' if tf_cnv < 0 else 'Neutral')
 
-                regulon_stats.append({
-                    'regulon': regulon,
-                    'tf': tf_name,
-                    'tf_status': tf_status,
-                    'target_counts': target_status_counts,
-                    'target_percentages': target_percentages,
-                    'total_targets': total_targets
-                })
+                    # Get target gene CNV status
+                    for target_gene in target_genes_in_cnv:
+                        total_cell_gene_pairs += 1
+                        target_cnv = cnv_matrix.loc[target_gene, cnv_cell_id]
+                        target_status = 'Gain' if target_cnv > 0 else ('Loss' if target_cnv < 0 else 'Neutral')
+
+                        # Update both tables
+                        full_contingency_table.loc[f"TF {tf_status}", f"Target {target_status}"] += 1
+
+                        # Only update simplified table for non-neutral cases
+                        if tf_status != 'Neutral' and target_status != 'Neutral':
+                            simplified_table.loc[f"TF {tf_status}", f"Target {target_status}"] += 1
 
             except Exception as e:
                 print(f"Skipping regulon {regulon} due to error: {str(e)}")
                 continue
 
-        # Calculate average number of target genes per regulon (only for regulons with TF in CNV)
-        avg_target_genes = total_target_genes / regulons_with_tf_in_cnv if regulons_with_tf_in_cnv > 0 else 0
-
         # Print summary statistics
-        print(f"\nTotal regulons analyzed: {total_regulons}")
+        print(f"\nAnalysis complete!")
+        print(f"Total regulons analyzed: {total_regulons}")
         print(f"Regulons with TF in CNV file: {regulons_with_tf_in_cnv}")
         print(f"Regulons skipped (TF not in CNV): {regulons_skipped}")
-        print(f"\nAverage number of target genes per regulon (for regulons with TF in CNV): {avg_target_genes:.1f}")
+        print(f"Total cells analyzed: {total_cells_analyzed}")
+        print(f"Total TF-target gene pairs analyzed: {total_cell_gene_pairs}")
 
-        # Print TF CNV status summary (only for TFs in CNV file)
-        print("\nTranscription Factor CNV Status Summary (only TFs in CNV file):")
-        print(f"TFs with Loss: {tf_cnv_counts['Loss']}")
-        print(f"TFs with Neutral: {tf_cnv_counts['Neutral']}")
-        print(f"TFs with Gain: {tf_cnv_counts['Gain']}")
+        # Store tables
+        self.cnv_contingency_tables[population] = full_contingency_table
+        self.cnv_contingency_tables[f"{population}_simplified"] = simplified_table
 
-        # Store results
-        self.regulon_cnv_stats[population] = regulon_stats
-        self.tf_cnv_status = {
-            'counts': tf_cnv_counts,
-            'details': tf_status_details
-        }
+        # Print both tables
+        print("\nFull contingency table (counts):")
+        print(full_contingency_table)
+        print("\nSimplified contingency table (only gains/losses):")
+        print(simplified_table)
 
-        print("\nFinal contingency table (counts per target gene):")
-        print(contingency_table)
+        # Statistical analysis
+        if not full_contingency_table.empty:
+            print("\n=== STATISTICAL ANALYSIS ===")
 
-        # Filter out empty rows/columns
-        contingency_table = contingency_table.loc[
-            contingency_table.sum(axis=1) > 0,
-            contingency_table.sum(axis=0) > 0
-        ]
-
-        if contingency_table.empty:
-            print(f"\nWarning: No CNV-regulon relationships found for {population}")
-            return
-
-        self.cnv_contingency_tables[population] = contingency_table
-
-        # Perform chi-square test if we have data
-        if not contingency_table.empty:
-            print("\nPerforming chi-square test...")
+            # 1. Full 3x3 analysis
+            print("\n1. FULL ANALYSIS (3x3):")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 try:
-                    chi2, pval, dof, expected = chi2_contingency(
-                        contingency_table,
+                    chi2_full, pval_full, dof_full, expected_full = chi2_contingency(
+                        full_contingency_table,
                         lambda_="log-likelihood"
                     )
-                    print(f"Chi2 statistic: {chi2:.3f}")
-                    print(f"P-value: {pval:.4e}")
-                    print(f"Degrees of freedom: {dof}")
+                    n_full = full_contingency_table.values.sum()
+                    min_dim_full = min(full_contingency_table.shape) - 1
+                    cramers_v_full = np.sqrt(chi2_full / (n_full * min_dim_full))
 
+                    print(f"Chi-square statistic: {chi2_full:.4f}")
+                    print(f"P-value: {pval_full:.4e}")
+                    print(f"Degrees of freedom: {dof_full}")
+                    print(f"Cramer's V: {cramers_v_full:.4f}")
+
+                    # Store full results
                     self.cnv_association_results[population] = {
-                        'chi2_statistic': chi2,
-                        'p_value': pval,
-                        'degrees_of_freedom': dof,
-                        'expected_frequencies': expected,
-                        'contingency_table': contingency_table
+                        'full_analysis': {
+                            'chi2': chi2_full,
+                            'p_value': pval_full,
+                            'dof': dof_full,
+                            'expected': pd.DataFrame(
+                                expected_full,
+                                index=full_contingency_table.index,
+                                columns=full_contingency_table.columns
+                            ),
+                            'cramers_v': cramers_v_full,
+                            'residuals': (full_contingency_table.values - expected_full) / np.sqrt(expected_full)
+                        }
                     }
 
-                    print("\nExpected frequencies:")
-                    print(pd.DataFrame(
-                        expected,
-                        index=contingency_table.index,
-                        columns=contingency_table.columns
-                    ))
+                except Exception as e:
+                    print(f"Full analysis chi-square test failed: {str(e)}")
+
+            # 2. Simplified 2x2 analysis
+            print("\n2. SIMPLIFIED ANALYSIS (2x2 Gains/Losses only):")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                try:
+                    # Filter out empty rows/columns in case some categories are missing
+                    simplified_table = simplified_table.loc[
+                        simplified_table.sum(axis=1) > 0,
+                        simplified_table.sum(axis=0) > 0
+                    ]
+
+                    if not simplified_table.empty:
+                        chi2_simp, pval_simp, dof_simp, expected_simp = chi2_contingency(
+                            simplified_table,
+                            lambda_="log-likelihood"
+                        )
+                        n_simp = simplified_table.values.sum()
+                        cramers_v_simp = np.sqrt(chi2_simp / n_simp)  # For 2x2, min_dim is always 1
+
+                        print(f"Chi-square statistic: {chi2_simp:.4f}")
+                        print(f"P-value: {pval_simp:.4e}")
+                        print(f"Degrees of freedom: {dof_simp}")
+                        print(f"Cramer's V: {cramers_v_simp:.4f}")
+
+                        # Store simplified results
+                        self.cnv_association_results[population]['simplified_analysis'] = {
+                            'chi2': chi2_simp,
+                            'p_value': pval_simp,
+                            'dof': dof_simp,
+                            'expected': pd.DataFrame(
+                                expected_simp,
+                                index=simplified_table.index,
+                                columns=simplified_table.columns
+                            ),
+                            'cramers_v': cramers_v_simp,
+                            'residuals': (simplified_table.values - expected_simp) / np.sqrt(expected_simp)
+                        }
 
                 except Exception as e:
-                    print(f"Statistical test failed: {str(e)}")
-
-            # Visualize results
-            self._visualize_cnv_associations(population)
+                    print(f"Simplified analysis chi-square test failed: {str(e)}")
 
     def _visualize_cnv_associations(self, population: str) -> None:
         """Generate visualization of CNV-regulon relationships."""
@@ -723,6 +563,7 @@ class CNVRegulonAnalyzer:
 
         return fig
 
+
 def main():
     """Run CNV-regulon relationship analysis pipeline."""
     # Configuration
@@ -757,9 +598,9 @@ def main():
             print(f"Analysis completed successfully for sample {sample}")
 
             # Generate the Sankey plot
-            fig = analyzer.plot_cnv_sankey(cell_population)
+            # fig = analyzer.plot_cnv_sankey(cell_population)
             # Save with sample name in filename
-            fig.write_html(f"{sample}_tf_cnv_to_target_relationships.html")  # Interactive version
+            # fig.write_html(f"{sample}_tf_cnv_to_target_relationships.html")  # Interactive version
 
         except Exception as e:
             print(f"Analysis failed for sample {sample}: {str(e)}")
