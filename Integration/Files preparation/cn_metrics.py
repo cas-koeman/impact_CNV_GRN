@@ -8,7 +8,7 @@ import pyreadr  # Make sure to import this for reading RDS files
 from scipy.optimize import minimize
 
 
-class CNABurdenAnalyzer:
+class CopyNumberMetrics:
     """Class to analyze CNA burden and heterogeneity across tumor subtypes."""
 
     def __init__(self, base_dir="/work/project/ladcol_020"):
@@ -364,7 +364,7 @@ def main():
         "C3L-00004-T1_CPT0001540013",
         "C3L-00026-T1_CPT0001500003",
         "C3L-00088-T1_CPT0000870003",
-        # "C3L-00096-T1_CPT0001180011",  # Commented out as in original
+        # "C3L-00096-T1_CPT0001180011",  
         "C3L-00416-T2_CPT0010100001",
         "C3L-00448-T1_CPT0010160004",
         "C3L-00917-T1_CPT0023690004",
@@ -374,7 +374,7 @@ def main():
     ]
 
     # Create analyzer instance
-    analyzer = CNABurdenAnalyzer(base_dir)
+    analyzer = CopyNumberMetrics(base_dir)
 
     # Load gene order file once
     gene_order_file = os.path.join(base_dir, "scCNV", "inferCNV", "hg38_gencode_v27.txt")
