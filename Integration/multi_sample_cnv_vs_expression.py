@@ -8,16 +8,16 @@ from scipy import stats
 
 
 class MultiSampleCNVExpressionAnalyzer:
-    def __init__(self, datasets, cnv_dir, raw_count_dir):
+    def __init__(self, samples, cnv_dir, raw_count_dir):
         """
         Initialize the class with dataset names and directory paths.
 
         Args:
-            datasets (list): List of dataset names.
+            samples (list): List of dataset names.
             cnv_dir (str): Directory for CNV matrix files.
             raw_count_dir (str): Directory for raw count matrix files.
         """
-        self.datasets = datasets
+        self.samples = samples
         self.cnv_dir = cnv_dir
         self.raw_count_dir = raw_count_dir
         self.aggregated_results = []
@@ -35,13 +35,15 @@ class MultiSampleCNVExpressionAnalyzer:
         print(f"\nProcessing dataset: {dataset}")
 
         # Define file paths
-        cnv_matrix_path = os.path.join(self.cnv_dir, dataset, "cnv_matrix.tsv")
+        cnv_matrix_path = os.path.join(self.cnv_dir, dataset, "extended_cnv_matrix.tsv")
         raw_count_path = os.path.join(self.raw_count_dir, dataset, "raw_count_matrix.txt")
 
         print(f"Loading CNV matrix from: {cnv_matrix_path}")
         cnv_matrix = pd.read_csv(cnv_matrix_path, sep='\t', index_col=0)
-        cnv_matrix = cnv_matrix * 2 - 2  # Adjust CNV values
+        cnv_matrix = cnv_matrix # * 2 - 2  # Adjust CNV values
         print(f"CNV matrix shape: {cnv_matrix.shape}")
+        # Add this after loading each CNV matrix
+        print(f"Unique CNV values in {dataset}: {np.unique(cnv_matrix.values)}")
 
         print(f"Loading raw count matrix from: {raw_count_path}")
         raw_count_matrix = pd.read_csv(raw_count_path, sep='\t', index_col=0)
@@ -90,66 +92,61 @@ class MultiSampleCNVExpressionAnalyzer:
 
         return pd.DataFrame(results)
 
-    def process_all_datasets(self):
+    def process_all_samples(self):
         """
-        Process all datasets and aggregate results into a single DataFrame.
+        Process all samples and aggregate results into a single DataFrame.
         """
-        print("\nStarting to process all datasets...")
-        for dataset in self.datasets:
+        print("\nStarting to process all samples...")
+        for dataset in self.samples:
             print(f"\nProcessing dataset: {dataset}")
             results_df = self._process_single_dataset(dataset)
             self.aggregated_results.append(results_df)
             print(f"Finished processing dataset: {dataset}")
 
-        # Combine results from all datasets into a single DataFrame
-        print("\nCombining results from all datasets...")
+        # Combine results from all samples into a single DataFrame
+        print("\nCombining results from all samples...")
         self.aggregated_results_df = pd.concat(self.aggregated_results, ignore_index=True)
-        print("All datasets processed and results aggregated.")
+        print("All samples processed and results aggregated.")
 
     def plot_aggregated_scatter(self):
         """
-        Create a scatterplot of mean Z-scores vs CNV for all datasets, with jitter and a linear trendline.
+        Create a scatterplot of mean Z-scores vs CNV for all samples, with jitter and a linear trendline.
         """
         print("\nCreating scatterplot with trendline...")
         plt.figure(figsize=(12, 8))
 
-        # Filter data to include only CNV values between -2 and 2
-        filtered_df = self.aggregated_results_df[
-            (self.aggregated_results_df['CNV'] >= -2) & (self.aggregated_results_df['CNV'] <= 2)
-            ]
-
         # Define a jitter function to add random noise
         def jitter(values, j):
-            return values + np.random.normal(j, 0.1, values.shape)
+            return values + np.random.normal(j, 0.05, values.shape)
 
         # Add jitter to the x-axis
-        filtered_df['CNV_jittered'] = jitter(filtered_df['CNV'].astype(float), 0.1)
+        self.aggregated_results_df['CNV_jittered'] = jitter(self.aggregated_results_df['CNV'].astype(float), 0.05)
 
         # Create the scatterplot
         ax = sns.scatterplot(
             x='CNV_jittered',
             y='Mean Z-score',
             hue='Dataset',  # Color by dataset
-            data=filtered_df,
-            palette='viridis',  # Use a color palette
+            data=self.aggregated_results_df,
+            palette='coolwarm',  # Use a color palette
             s=100,  # Adjust the size of the dots
             alpha=0.6  # Add transparency
         )
 
         # Add linear regression line
-        x = filtered_df['CNV'].astype(float)
-        y = filtered_df['Mean Z-score']
+        x = self.aggregated_results_df['CNV'].astype(float)
+        y = self.aggregated_results_df['Mean Z-score']
 
         # Calculate linear regression
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
         r_squared = r_value ** 2
 
         # Get x values for the line
-        x_line = np.linspace(-2, 2, 100)
+        x_line = np.linspace(0, 3, 100)
         y_line = slope * x_line + intercept
 
         # Plot the regression line (without adding to legend)
-        plt.plot(x_line, y_line, color='black', linewidth=0.5, linestyle="--", label='_nolegend_')
+        plt.plot(x_line, y_line, color='black', linewidth=1, linestyle="--", label='_nolegend_', alpha=0.4)
 
         # Add R² value and regression equation
         plt.text(0.05, 0.95, f'R² = {r_squared:.4f}', transform=plt.gca().transAxes,
@@ -160,13 +157,14 @@ class MultiSampleCNVExpressionAnalyzer:
                  fontsize=18, verticalalignment='top')
 
         # Set x-axis limits and ticks
-        plt.xlim(-2.5, 2.5)
-        plt.xticks([-2, -1, 0, 1, 2])  # Explicitly set the x-axis ticks
+        plt.xlim(-0.2, 3.2)
+        plt.ylim(-0.3, 0.5)
+        plt.xticks([0, 0.5, 1, 1.5, 2, 3])  # Explicitly set the x-axis ticks
 
         # Remove top and right spines
         sns.despine()
 
-        plt.title('Mean Z-scores of Gene Expression per Copy Number Variation (All Datasets)')
+        plt.title('Mean Z-scores of Gene Expression per Copy Number Variation (All Samples)')
         plt.xlabel('Copy Number Variation (CNV)')
         plt.ylabel('Mean Z-score of Gene Expression')
 
@@ -174,9 +172,9 @@ class MultiSampleCNVExpressionAnalyzer:
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 
         plt.tight_layout()
-        plt.savefig('zscore_cnv_scatter_all_datasets.png', dpi=300, bbox_inches='tight')
+        plt.savefig('zscore_cnv_scatter_all_samples.png', dpi=300, bbox_inches='tight')
         plt.close()
-        print("Scatterplot with trendline saved as 'zscore_cnv_scatter_all_datasets.png'.")
+        print("Scatterplot with trendline saved as 'zscore_cnv_scatter_all_samples.png'.")
 
 
 # Example usage:
@@ -184,7 +182,6 @@ sample_ids = [
     "C3L-00004-T1_CPT0001540013",
     "C3L-00026-T1_CPT0001500003",
     "C3L-00088-T1_CPT0000870003",
-    # "C3L-00096-T1_CPT0001180011",
     "C3L-00416-T2_CPT0010100001",
     "C3L-00448-T1_CPT0010160004",
     "C3L-00917-T1_CPT0023690004",
@@ -198,10 +195,10 @@ raw_count_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"
 
 # Initialize and run the multi-dataset analysis
 print("Initializing MultiDatasetCNVAnalysis...")
-multi_analysis = MultiSampleCNVExpressionAnalyzer(datasets, cnv_dir, raw_count_dir)
+multi_analysis = MultiSampleCNVExpressionAnalyzer(sample_ids, cnv_dir, raw_count_dir)
 
-print("\nProcessing all datasets...")
-multi_analysis.process_all_datasets()
+print("\nProcessing all samples...")
+multi_analysis.process_all_samples()
 
 print("\nPlotting aggregated scatter plot...")
 multi_analysis.plot_aggregated_scatter()

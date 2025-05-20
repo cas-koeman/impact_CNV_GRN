@@ -147,6 +147,10 @@ def create_infercnv_matrix(infercnv_file, output_dir=".."):
 def process_missing_genes_in_cnv(raw_count_file, cnv_file, gene_order_file, output_dir=".."):
     """
     Process missing genes in CNV data
+    
+    Only include genes where ALL cells have agreeing left/right neighbors (even if value is 1).
+    Exclude genes where ANY cell has no agreeing neighbors or is on chromosome border.
+    Preserve all values from the original matrix.
     """
     output_file = os.path.join(output_dir, "extended_cnv_matrix.tsv")
     print(f"Output will be written to: {output_file}")
@@ -203,35 +207,28 @@ def process_missing_genes_in_cnv(raw_count_file, cnv_file, gene_order_file, outp
 
     # Initialize counters for summary
     total_added = 0
-    total_left_border = 0
-    total_right_border = 0
-    total_both_borders = 0
+    total_excluded = 0
+    total_skipped_no_order = 0
 
-    # Create updated CNV data structure
+    # Create updated CNV data structure with original values
     updated_cnv_data = cnv_data.copy()
+    
+    # Track which missing genes can be safely included
+    safe_to_include = {}
+
+    # Process each missing gene
     for missing_gene in missing_genes:
-        updated_cnv_data[missing_gene] = ["0"] * len(cnv_cells)
+        if missing_gene not in gene_indices:
+            total_skipped_no_order += 1
+            continue
 
-    # Process each cell individually
-    for cell_idx in range(len(cnv_cells)):
-        cell_id = cnv_cells[cell_idx]
-        print(f"\nProcessing cell {cell_id} ({cell_idx + 1}/{len(cnv_cells)})...")
+        idx = gene_indices[missing_gene]
+        chrom = gene_positions[missing_gene]['chrom']
+        safe_values = []
+        can_include = True
 
-        added_genes = 0
-        left_border_genes = 0
-        right_border_genes = 0
-        both_borders_genes = 0
-
-        # For each missing gene
-        for missing_gene in missing_genes:
-            if missing_gene not in gene_indices:
-                continue
-
-            idx = gene_indices[missing_gene]
-
-            # Find chromosome for missing gene
-            chrom = gene_positions[missing_gene]['chrom']
-
+        # Check all cells for this gene
+        for cell_idx in range(len(cnv_cells)):
             # Find adjacent genes in the gene order file that exist in cnv_data
             left_gene = None
             right_gene = None
@@ -256,58 +253,55 @@ def process_missing_genes_in_cnv(raw_count_file, cnv_file, gene_order_file, outp
                     right_gene = candidate
                     break
 
-            # Determine if we should include the gene for this cell
+            # Check if we can determine CNV value for this cell
             if left_gene is not None and right_gene is not None:
-                # Check if CNV values are the same for this cell
+                # Get neighbor values for this cell
                 left_value = cnv_data[left_gene][cell_idx]
                 right_value = cnv_data[right_gene][cell_idx]
 
                 if left_value == right_value:
-                    # Add missing gene with same CNV value as neighbors for this cell
-                    updated_cnv_data[missing_gene][cell_idx] = left_value
-                    added_genes += 1
+                    safe_values.append(left_value)
                 else:
-                    # Gene is on a border between two CNV states for this cell
-                    both_borders_genes += 1
-            elif left_gene is not None:
-                # Gene is on the right border for this cell
-                right_border_genes += 1
-            elif right_gene is not None:
-                # Gene is on the left border for this cell
-                left_border_genes += 1
+                    can_include = False
+                    break
+            else:
+                can_include = False
+                break
 
-        # Update totals
-        total_added += added_genes
-        total_left_border += left_border_genes
-        total_right_border += right_border_genes
-        total_both_borders += both_borders_genes
+        if can_include:
+            safe_to_include[missing_gene] = safe_values
+            total_added += 1
+        else:
+            total_excluded += 1
+
+    # Add safely included genes to final data
+    for gene, values in safe_to_include.items():
+        updated_cnv_data[gene] = values
 
     # Write updated CNV matrix
     print("\nWriting updated CNV matrix...")
 
-    # Open output file for writing
+    # Write output file
     with open(output_file, 'w') as f:
         # Write header
         header_line = '\t'.join([''] + cnv_cells)
         f.write(header_line + '\n')
 
-        # Only write genes that have at least one non-zero value
+        # Write all original genes and safely included missing genes
         genes_written = 0
-        for gene in updated_cnv_data:
-            if any(val != "0" for val in updated_cnv_data[gene]):
-                gene_line = '\t'.join([gene] + updated_cnv_data[gene])
-                f.write(gene_line + '\n')
-                genes_written += 1
+        for gene in sorted(updated_cnv_data.keys()):
+            gene_line = '\t'.join([gene] + updated_cnv_data[gene])
+            f.write(gene_line + '\n')
+            genes_written += 1
 
     # Print final summary
     print("\nFINAL SUMMARY:")
     print(f"Total genes in raw count matrix: {len(set(raw_count_genes))}")
     print(f"Total genes in original CNV matrix: {len(cnv_data)}")
     print(f"Total missing genes: {len(missing_genes)}")
-    print(f"Total gene-cell combinations added: {total_added}")
-    print(f"Total gene-cell combinations on left borders: {total_left_border}")
-    print(f"Total gene-cell combinations on right borders: {total_right_border}")
-    print(f"Total gene-cell combinations on borders between CNV states: {total_both_borders}")
+    print(f"Total missing genes skipped (not in gene order file): {total_skipped_no_order}")
+    print(f"Total missing genes included in output: {len(safe_to_include)}")
+    print(f"Total missing genes excluded: {total_excluded}")
     print(f"Total genes written to output file: {genes_written}")
 
     return output_file
