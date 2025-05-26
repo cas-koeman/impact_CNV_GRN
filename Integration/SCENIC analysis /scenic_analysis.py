@@ -8,6 +8,7 @@ import pyreadr
 from scipy.stats import kruskal, zscore, chi2_contingency
 from statsmodels.graphics.mosaicplot import mosaic
 from typing import Dict, List, Optional, Tuple, Union, Any
+import argparse
 
 
 class SCENICDataLoader:
@@ -69,7 +70,7 @@ class SCENICDataLoader:
         if not os.path.exists(cnv_path):
             raise FileNotFoundError(f"CNV matrix not found at {cnv_path}")
 
-        self.cnv_matrix = pd.read_csv(cnv_path, sep='\t', index_col=0) * 2 - 2
+        self.cnv_matrix = pd.read_csv(cnv_path, sep='\t', index_col=0) 
         return self.cnv_matrix
 
     def load_tumor_subclusters(self, dataset_id: str, aliquot: str) -> pd.DataFrame:
@@ -113,21 +114,6 @@ class CNVRegulonAnalyzer:
         print(f"  - CNV matrix loaded: {'Yes' if self.loader.cnv_matrix is not None else 'No'}")
         print(f"  - Loom data loaded: {'Yes' if self.loader.loom_data is not None else 'No'}")
         print(f"  - Tumor subclusters loaded: {'Yes' if self.loader.tumor_subclusters is not None else 'No'}")
-
-    def _get_cnv_status(self, gene: str, cnv_matrix: pd.DataFrame) -> str:
-        """Determine CNV status for a single gene across cells."""
-        if gene not in cnv_matrix.index:
-            return "Neutral"
-
-        cnv_values = cnv_matrix.loc[gene]
-        gain_percent = (cnv_values > 0).mean()
-        loss_percent = (cnv_values < 0).mean()
-
-        if gain_percent >= 0.5:
-            return "Gain"
-        elif loss_percent >= 0.5:
-            return "Loss"
-        return "Neutral"
 
     def analyze_subcluster_populations(self) -> None:
         """Analyze CNV-regulon relationships for all tumor subclusters."""
@@ -275,13 +261,13 @@ class CNVRegulonAnalyzer:
                 for loom_cell_id, cnv_cell_id in cell_id_map.items():
                     # Get TF CNV status
                     tf_cnv = cnv_matrix.loc[tf_name, cnv_cell_id]
-                    tf_status = 'Gain' if tf_cnv > 0 else ('Loss' if tf_cnv < 0 else 'Neutral')
+                    tf_status = 'Gain' if tf_cnv > 1 else ('Loss' if tf_cnv < 1 else 'Neutral')
 
                     # Get target gene CNV status
                     for target_gene in target_genes_in_cnv:
                         total_cell_gene_pairs += 1
                         target_cnv = cnv_matrix.loc[target_gene, cnv_cell_id]
-                        target_status = 'Gain' if target_cnv > 0 else ('Loss' if target_cnv < 0 else 'Neutral')
+                        target_status = 'Gain' if target_cnv > 1 else ('Loss' if target_cnv < 1 else 'Neutral')
 
                         # Update both tables
                         full_contingency_table.loc[f"TF {tf_status}", f"Target {target_status}"] += 1
@@ -606,31 +592,44 @@ class CNVRegulonAnalyzer:
         if not self.cnv_association_results or self.sample_name not in self.cnv_association_results:
             return []
 
-        # Initialize DataFrames for results
-        tumor_results = []
-        subcluster_results = []
+        # Initialize list for all results
         all_results = []
 
+        # First process "Tumor" population specifically to ensure it comes first
+        if "Tumor" in self.cnv_association_results[self.sample_name]:
+            tumor_analyses = self.cnv_association_results[self.sample_name]["Tumor"]
+            # Extract data for both full and simplified analyses
+            full_data = self._create_result_dict("Tumor", tumor_analyses.get("full_analysis", {}), "full")
+            simplified_data = self._create_result_dict("Tumor", tumor_analyses.get("simplified_analysis", {}), "simplified")
+            
+            # Add tumor results first
+            if full_data:
+                all_results.append(full_data)
+            if simplified_data:
+                all_results.append(simplified_data)
+
+        # Then process all other populations (subclusters)
         for population, analyses in self.cnv_association_results[self.sample_name].items():
-            if population.endswith("_simplified"):
+            # Skip the tumor population (already processed) and simplified entries
+            if population == "Tumor" or population.endswith("_simplified"):
                 continue
 
             # Extract data for both full and simplified analyses
             full_data = self._create_result_dict(population, analyses.get("full_analysis", {}), "full")
-            simplified_data = self._create_result_dict(population, analyses.get("simplified_analysis", {}),
-                                                       "simplified")
+            simplified_data = self._create_result_dict(population, analyses.get("simplified_analysis", {}), "simplified")
 
-            # Append to appropriate results list
-            if population == "Tumor":
-                tumor_results.extend([full_data, simplified_data] if simplified_data else [full_data])
-            else:
-                subcluster_results.extend([full_data, simplified_data] if simplified_data else [full_data])
+            # Add to results
+            if full_data:
+                all_results.append(full_data)
+            if simplified_data:
+                all_results.append(simplified_data)
 
-            all_results.extend([full_data, simplified_data] if simplified_data else [full_data])
-
-        # Save results to files
-        self._save_results_to_csv(tumor_results, "tumor_results", output_dir)
-        self._save_results_to_csv(subcluster_results, "subclusters_results", output_dir)
+        # Save all results to a single file
+        if all_results:
+            df = pd.DataFrame(all_results)
+            output_path = os.path.join(output_dir, f"{self.sample_name}_results.csv")
+            df.to_csv(output_path, index=False)
+            print(f"  - Saved results to {output_path}")
 
         return all_results
 
@@ -696,71 +695,86 @@ def process_sample(dataset_id: str, aliquot: str, base_dir: str = "/work/project
         import traceback
         traceback.print_exc()
         return None, []
+    
 
+def parse_args():
+    """Parse command line arguments with flexible input options."""
+    parser = argparse.ArgumentParser(description='Run CNV-regulon analysis for one or more samples.')
+    
+    # Single sample mode
+    parser.add_argument('--dataset_id', type=str, default='ccRCC_GBM',
+                      help='Dataset ID (default: ccRCC_GBM)')
+    parser.add_argument('--sample_id', type=str, default=None,
+                      help='Sample ID to process (single sample mode)')
+    
+    # Multi-sample mode
+    parser.add_argument('--sample_list', nargs='+', default=None,
+                      help='List of sample IDs to process (space-separated)')
+    parser.add_argument('--base_dir', type=str, default='/work/project/ladcol_020',
+                      help='Base directory path')
+    
+    return parser.parse_args()
+
+def process_single_sample(dataset_id: str, sample_id: str, base_dir: str) -> Tuple[Optional[CNVRegulonAnalyzer], List[Dict]]:
+    """Process one sample with error handling."""
+    try:
+        print(f"\n{'=' * 80}")
+        print(f"PROCESSING SAMPLE: {sample_id}")
+        print(f"{'=' * 80}")
+        
+        analyzer, results = process_sample(
+            dataset_id=dataset_id,
+            aliquot=sample_id,
+            base_dir=base_dir
+        )
+        
+        if analyzer:
+            print(f"\n[Complete] Finished processing sample {sample_id}")
+            return analyzer, results
+        return None, []
+    
+    except Exception as e:
+        print(f"\n[Error] Processing sample {sample_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None, []
 
 def main():
-    """Run CNV-regulon relationship analysis pipeline."""
-    # Configuration
-    dataset_id = "ccRCC_GBM"
-    sample_ids = [
-        "C3L-00004-T1_CPT0001540013",
-        "C3L-00026-T1_CPT0001500003",
-        "C3L-00088-T1_CPT0000870003",
-        "C3L-00416-T2_CPT0010100001",
-        "C3L-00448-T1_CPT0010160004",
-        "C3L-00917-T1_CPT0023690004",
-        "C3L-01313-T1_CPT0086820004",
-        "C3N-00317-T1_CPT0012280004",
-        "C3N-00495-T1_CPT0078510004"
-    ]
-
+    """Main entry point that handles both single and multi-sample processing."""
+    args = parse_args()
     all_results = []
-    analyzers = {}
-
+    
+    # Determine which samples to process
+    samples_to_process = []
+    if args.sample_id:
+        samples_to_process.append(args.sample_id)
+    if args.sample_list:
+        samples_to_process.extend(args.sample_list)
+    
+    # If no samples specified via arguments, check for environment variable
+    if not samples_to_process and 'SAMPLES' in os.environ:
+        samples_to_process = os.environ['SAMPLES'].split()
+    
+    if not samples_to_process:
+        print("\n[Notice] Using default sample list since no samples were specified")
+    
     # Process each sample
-    for sample in sample_ids:
-        analyzer, sample_results = process_sample(dataset_id, sample)
-        if analyzer:
-            analyzers[sample] = analyzer
-            all_results.extend(sample_results)
-
-    # Save aggregate results
-    if all_results:
-        results_base = os.path.join(
-            "/work/project/ladcol_020",
-            "integration_GRN_CNV",
-            dataset_id
+    for sample in samples_to_process:
+        analyzer, results = process_single_sample(
+            dataset_id=args.dataset_id,
+            sample_id=sample,
+            base_dir=args.base_dir
         )
+        if results:
+            all_results.extend(results)
+    
+    # Save aggregate results if we processed multiple samples
+    if len(samples_to_process) > 1 and all_results:
+        results_base = os.path.join(args.base_dir, "integration_GRN_CNV", args.dataset_id)
+        os.makedirs(results_base, exist_ok=True)
         aggregate_file = os.path.join(results_base, "allresults_scenic_analysis.csv")
         pd.DataFrame(all_results).to_csv(aggregate_file, index=False)
-
-        # Print summary statistics
-        print("\n" + "=" * 80)
-        print("AGGREGATE RESULTS ACROSS ALL SAMPLES")
-        print("=" * 80)
-        self._print_aggregate_stats(all_results)
-
-    print("\n[Complete] Analysis pipeline finished")
-
-
-def _print_aggregate_stats(all_results: List[Dict]) -> None:
-    """Print aggregate statistics from all results."""
-    results_df = pd.DataFrame(all_results)
-
-    print("\nSummary of Chi-square test significance:")
-    print(results_df['significant'].value_counts())
-
-    print("\nSummary of Cramer's V (association strength):")
-    print(results_df['cramers_v'].describe())
-
-    # Print significant results
-    sig_results = results_df[results_df['significant']]
-    if not sig_results.empty:
-        print("\nSamples with significant associations:")
-        print(sig_results[['sample', 'population', 'analysis_type', 'p_value', 'cramers_v']])
-    else:
-        print("\nNo samples showed significant associations")
-
+        print(f"\nSaved aggregate results to {aggregate_file}")
 
 if __name__ == "__main__":
     main()

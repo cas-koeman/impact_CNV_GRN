@@ -41,15 +41,16 @@ class CopyNumberMetrics:
 
     def load_gene_order(self, gene_order_file):
         """Load gene order file and prepare gene length dictionary."""
-        gene_order = pd.read_csv(gene_order_file, sep='\t', header=None,
-                                 names=['gene', 'chrom', 'start', 'end'])
-        gene_order['length'] = gene_order['end'] - gene_order['start']
+        self.gene_order = pd.read_csv(gene_order_file, sep='\t', header=None,
+                                names=['gene', 'chrom', 'start', 'end'])
+        self.gene_order['length'] = self.gene_order['end'] - self.gene_order['start']
+        self.gene_order.set_index('gene', inplace=True)  # Set gene as index for easier lookup
 
         # Create gene length dictionary
-        self.gene_lengths = dict(zip(gene_order['gene'], gene_order['length']))
+        self.gene_lengths = dict(zip(self.gene_order.index, self.gene_order['length']))
         self.total_genome_length = sum(self.gene_lengths.values())
 
-        return gene_order
+        return self.gene_order
 
     def calculate_segmented_copy_numbers(self, cnv_df, window_size=100):
         """
@@ -64,9 +65,8 @@ class CopyNumberMetrics:
         """
         segmented_data = {}
 
-        # Sort genes by genomic position (assuming gene_order has been loaded)
-        sorted_genes = sorted(self.gene_lengths.keys(), key=lambda x: (self.gene_order.loc[x, 'chrom'],
-                                                                       self.gene_order.loc[x, 'start']))
+        # Sort genes by genomic position using the pre-loaded gene_order
+        sorted_genes = self.gene_order.sort_values(['chrom', 'start']).index
 
         for cell in cnv_df.columns:
             cell_segments = []
@@ -82,7 +82,8 @@ class CopyNumberMetrics:
                         mean_cn = np.mean(current_segment)
                         segment_width = sum(
                             self.gene_lengths[g] for g in sorted_genes[i - len(current_segment) + 1:i + 1]
-                            if g in self.gene_lengths)
+                            if g in self.gene_lengths
+                        )
                         cell_segments.append({
                             'mean_cn': mean_cn,
                             'width': segment_width

@@ -32,7 +32,7 @@ class SingleGeneExpressionCNVAnalyzer:
         for dataset in self.datasets:
             try:
                 # Define file paths
-                cnv_matrix_path = os.path.join(self.cnv_dir, dataset, "cnv_matrix.tsv")
+                cnv_matrix_path = os.path.join(self.cnv_dir, dataset, "extended_cnv_matrix.tsv")
                 raw_count_path = os.path.join(self.raw_count_dir, dataset, "raw_count_matrix.txt")
                 
                 # Check if files exist
@@ -50,7 +50,7 @@ class SingleGeneExpressionCNVAnalyzer:
                 raw_count_matrix = pd.read_csv(raw_count_path, sep='\t', index_col=0)
                 
                 # Convert CNV to copy number change relative to diploid
-                cnv_matrix = cnv_matrix * 2 - 2
+                cnv_matrix = cnv_matrix 
                 
                 print(f"CNV matrix dimensions: {cnv_matrix.shape}")
                 print(f"Raw count matrix dimensions (before filtering): {raw_count_matrix.shape}")
@@ -145,12 +145,12 @@ def main():
         "C3L-00004-T1_CPT0001540013",
         "C3L-00026-T1_CPT0001500003",
         "C3L-00088-T1_CPT0000870003"
-        # "C3L-00416-T2_CPT0010100001",
-        # "C3L-00448-T1_CPT0010160004",
-        # "C3L-00917-T1_CPT0023690004",
-        # "C3L-01313-T1_CPT0086820004",
-        # "C3N-00317-T1_CPT0012280004",
-        # "C3N-00495-T1_CPT0078510004"
+        "C3L-00416-T2_CPT0010100001",
+        "C3L-00448-T1_CPT0010160004",
+        "C3L-00917-T1_CPT0023690004",
+        "C3L-01313-T1_CPT0086820004",
+        "C3N-00317-T1_CPT0012280004",
+        "C3N-00495-T1_CPT0078510004"
     ]
     
     # Set paths for CNV and expression data

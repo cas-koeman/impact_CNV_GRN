@@ -10,7 +10,7 @@ import seaborn as sns
 import os
 
 # Define file paths
-CRAMERS_V_FILE = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/allresults_scenic_analysis.csv"
+CRAMERS_V_FILE = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/all_samples_results.csv"
 OUTPUT_FILE = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/cramers_v_boxplot.png"
 
 def load_and_prepare_data():
@@ -23,7 +23,8 @@ def load_and_prepare_data():
         ].copy()
 
         cramers_df['Sample'] = cramers_df['sample'].str.split('_').str[0]
-        cramers_df['Subcluster'] = 's' + cramers_df['population'].str.extract(r's(\d+)')[0]
+        subcluster_numbers = cramers_df['population'].str.extract(r's(\d+)')[0].astype(int)
+        cramers_df['Subcluster'] = 'Subcluster ' + subcluster_numbers.astype(str)
         return cramers_df
 
     except Exception as e:
@@ -37,11 +38,19 @@ def create_boxplot_plot(plot_df):
 
     # Font sizes reduced ~30%
     plt.rcParams['font.size'] = 12
-    plt.rcParams['axes.labelsize'] = 22
+    plt.rcParams['axes.labelsize'] = 20
     plt.rcParams['axes.titlesize'] = 14
     plt.rcParams['xtick.labelsize'] = 14
     plt.rcParams['ytick.labelsize'] = 14
     plt.rcParams['legend.fontsize'] = 17
+
+    # Order samples by decreasing median Cramér’s V
+    sample_order = (
+        plot_df.groupby('Sample')['cramers_v']
+        .median()
+        .sort_values(ascending=False)
+        .index
+    )
 
     ax = sns.boxplot(
         data=plot_df,
@@ -49,12 +58,13 @@ def create_boxplot_plot(plot_df):
         y='cramers_v',
         color='white',
         width=0.6,
-        linewidth=2.5,
-        fliersize=0
+        linewidth=1.5,
+        fliersize=0,
+        order=sample_order
     )
 
     unique_subclusters = sorted(plot_df['Subcluster'].unique())
-    palette = sns.color_palette('icefire', n_colors=len(unique_subclusters))
+    palette = sns.color_palette('coolwarm', n_colors=len(unique_subclusters))
 
     sns.stripplot(
         data=plot_df,
@@ -63,19 +73,21 @@ def create_boxplot_plot(plot_df):
         hue='Subcluster',
         palette=palette,
         size=8,
-        alpha=0.9,
+        alpha=0.6,
         jitter=0.2,
         ax=ax,
-        edgecolor='none'
+        edgecolor='none',
+        order=sample_order
     )
 
-    ax.axhline(0.2, color='gray', linestyle='--', linewidth=2, alpha=0.3)
+    ax.axhline(0.1, color='gray', linestyle='--', linewidth=1.5, alpha=0.3)
+    ax.axhline(0.3, color='gray', linestyle='--', linewidth=1.5, alpha=0.3)
 
-    ax.set_xlabel("Sample", labelpad=15)
     ax.set_ylabel("Cramer's V", labelpad=15)
+    ax.set_xlabel("")
 
     plt.xticks(rotation=45, ha='right', rotation_mode='anchor')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., title='Subcluster')
+    legend = plt.legend(bbox_to_anchor=(1, 0.6), loc='upper left', borderaxespad=0., frameon=False,)
     sns.despine(top=True, right=True)
     plt.tight_layout()
 

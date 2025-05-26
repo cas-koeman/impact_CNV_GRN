@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --error=grnboost2.err
-#SBATCH --output=grnboost2.out
-#SBATCH -J grnboost2
+#SBATCH --error=metrics.err
+#SBATCH --output=metrics.out
+#SBATCH -J cn_metrics
 #SBATCH -p slim16
 #SBATCH --ntasks=8
 #SBATCH --mem-per-cpu 64000
@@ -14,4 +14,4 @@ source /work/project/ladcol_020/Miniconda3/etc/profile.d/conda.sh
 conda activate pyscenic
 
 # Run the code (variables set within the .py file)
-python scenic_analysis.py
+python cn_metrics.py

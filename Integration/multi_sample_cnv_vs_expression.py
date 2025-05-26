@@ -36,17 +36,18 @@ class MultiSampleCNVExpressionAnalyzer:
 
         # Define file paths
         cnv_matrix_path = os.path.join(self.cnv_dir, dataset, "extended_cnv_matrix.tsv")
-        raw_count_path = os.path.join(self.raw_count_dir, dataset, "raw_count_matrix.txt")
+        count_matrix_path = os.path.join(self.raw_count_dir, dataset, "residual_matrix.txt")
+        # count_matrix_path = os.path.join(self.raw_count_dir, dataset, "raw_count_matrix.txt")
 
         print(f"Loading CNV matrix from: {cnv_matrix_path}")
         cnv_matrix = pd.read_csv(cnv_matrix_path, sep='\t', index_col=0)
-        cnv_matrix = cnv_matrix # * 2 - 2  # Adjust CNV values
+        cnv_matrix = cnv_matrix 
         print(f"CNV matrix shape: {cnv_matrix.shape}")
         # Add this after loading each CNV matrix
         print(f"Unique CNV values in {dataset}: {np.unique(cnv_matrix.values)}")
 
-        print(f"Loading raw count matrix from: {raw_count_path}")
-        raw_count_matrix = pd.read_csv(raw_count_path, sep='\t', index_col=0)
+        print(f"Loading raw count matrix from: {count_matrix_path}")
+        raw_count_matrix = pd.read_csv(count_matrix_path, sep='\t', index_col=0)
         print(f"Raw count matrix shape: {raw_count_matrix.shape}")
 
         # Step 1: Filter the raw count matrix
@@ -136,40 +137,35 @@ class MultiSampleCNVExpressionAnalyzer:
         # Add linear regression line
         x = self.aggregated_results_df['CNV'].astype(float)
         y = self.aggregated_results_df['Mean Z-score']
-
-        # Calculate linear regression
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
         r_squared = r_value ** 2
+        print(f"R² value: {r_squared:.3f}")
+        print(f"Slope: {slope:.3f}, Intercept: {intercept:.3f}")
 
-        # Get x values for the line
-        x_line = np.linspace(0, 3, 100)
+        x_min, x_max = 0.5, x.max()
+        x_line = np.linspace(x_min, x_max, 100)
         y_line = slope * x_line + intercept
+        plt.plot(x_line, y_line, color='black', linewidth=1, linestyle="--", label='_nolegend_', alpha=0.2)
 
-        # Plot the regression line (without adding to legend)
-        plt.plot(x_line, y_line, color='black', linewidth=1, linestyle="--", label='_nolegend_', alpha=0.4)
+        # Add R² value
+        plt.text(0.8, 0.1, f'R² = {r_squared:.3f}', transform=plt.gca().transAxes,
+                fontsize=18, verticalalignment='top')
 
-        # Add R² value and regression equation
-        plt.text(0.05, 0.95, f'R² = {r_squared:.4f}', transform=plt.gca().transAxes,
-                 fontsize=18, verticalalignment='top')
-
-        equation = f'y = {slope:.4f}x + {intercept:.4f}'
-        plt.text(0.05, 0.90, equation, transform=plt.gca().transAxes,
-                 fontsize=18, verticalalignment='top')
-
-        # Set x-axis limits and ticks
+        # Set x and y limits and ticks
         plt.xlim(-0.2, 3.2)
-        plt.ylim(-0.3, 0.5)
-        plt.xticks([0, 0.5, 1, 1.5, 2, 3])  # Explicitly set the x-axis ticks
+        plt.ylim(-0.2, 0.5)
+        plt.xticks([0, 0.5, 1, 1.5, 2, 3], fontsize=14)
+        plt.yticks(fontsize=14)
 
         # Remove top and right spines
         sns.despine()
 
-        plt.title('Mean Z-scores of Gene Expression per Copy Number Variation (All Samples)')
-        plt.xlabel('Copy Number Variation (CNV)')
-        plt.ylabel('Mean Z-score of Gene Expression')
+        # Axis labels with correct font size
+        plt.xlabel('Copy Number Variation (CNV)', fontsize=20)
+        plt.ylabel('Mean Z-score of Gene Expression', fontsize=20)
 
         # Move legend outside the plot
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.legend(loc='upper left', fontsize=10, frameon=False)
 
         plt.tight_layout()
         plt.savefig('zscore_cnv_scatter_all_samples.png', dpi=300, bbox_inches='tight')
@@ -179,16 +175,16 @@ class MultiSampleCNVExpressionAnalyzer:
 
 # Example usage:
 sample_ids = [
-    "C3L-00004-T1_CPT0001540013",
-    "C3L-00026-T1_CPT0001500003",
-    "C3L-00088-T1_CPT0000870003",
-    "C3L-00416-T2_CPT0010100001",
-    "C3L-00448-T1_CPT0010160004",
-    "C3L-00917-T1_CPT0023690004",
-    "C3L-01313-T1_CPT0086820004",
-    "C3N-00317-T1_CPT0012280004",
-    "C3N-00495-T1_CPT0078510004"
-]
+        "C3L-00004-T1_CPT0001540013",
+        "C3L-00026-T1_CPT0001500003",
+        "C3L-00088-T1_CPT0000870003",
+        "C3L-00416-T2_CPT0010100001",
+        "C3L-00448-T1_CPT0010160004",
+        "C3L-00917-T1_CPT0023690004",
+        "C3L-01313-T1_CPT0086820004",
+        "C3N-00317-T1_CPT0012280004",
+        "C3N-00495-T1_CPT0078510004"
+    ]
 
 cnv_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"
 raw_count_dir = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/"

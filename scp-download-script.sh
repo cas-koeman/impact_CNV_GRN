@@ -14,14 +14,15 @@ CONTROL_PATH="/tmp/ssh-control-%r@%h:%p"
 
 # Array of aliquots
 ALIQUOTS=(
-    "C3L-00004-T1_CPT0001540013"
-    "C3N-00495-T1_CPT0078510004"
-    "C3L-00917-T1_CPT0023690004"
-    "C3L-00088-T1_CPT0000870003"
-    "C3L-00026-T1_CPT0001500003"
-    "C3L-00448-T1_CPT0010160004"
-    "C3L-01313-T1_CPT0086820004"
-    "C3L-00416-T2_CPT0010100001"
+        "C3L-00004-T1_CPT0001540013"
+        "C3L-00026-T1_CPT0001500003"
+        "C3L-00088-T1_CPT0000870003"
+        "C3L-00416-T2_CPT0010100001"
+        "C3L-00448-T1_CPT0010160004"
+        "C3L-00917-T1_CPT0023690004"
+        "C3L-01313-T1_CPT0086820004"
+        "C3N-00317-T1_CPT0012280004"
+        "C3N-00495-T1_CPT0078510004"
 )
 
 # Files to download for each aliquot (relative paths)
@@ -29,12 +30,14 @@ declare -A FILE_PATHS
 FILE_PATHS[0]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/regulon_heatmap.png"
 FILE_PATHS[1]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/tumor_regulon_heatmap.png"
 FILE_PATHS[2]="scGRNi/RNA/SCENIC/ccRCC_GBM/ALIQUOT/figures/umap_expr_cell_type.png"
-FILE_PATHS[3]="CNV_calling/copyKAT/ccRCC_GBM/ALIQUOT/ALIQUOT_copykat_chromosome_heatmap_cell_types.jpg"
-FILE_PATHS[4]="CNV_calling/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.png"
-FILE_PATHS[5]="CNV_calling/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.png"
-FILE_PATHS[6]="integration_visualization/ccRCC_GBM/ALIQUOT/all_cnv_mosaic.png"
-FILE_PATHS[7]="integration_visualization/ccRCC_GBM/ALIQUOT/tf_overlap_venn.png"
-FILE_PATHS[8]="integration_visualization/ccRCC_GBM/ALIQUOT/tumor_cnv_mosaic.png"
+FILE_PATHS[3]="scCNV/copyKAT/ccRCC_GBM/ALIQUOT/ALIQUOT_copykat_chromosome_heatmap_cell_types.jpg"
+FILE_PATHS[4]="scCNV/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.20_HMM_predHMMi6.leiden.hmm_mode-subclusters.Pnorm_0.5.repr_intensities.png"
+FILE_PATHS[5]="scCNV/inferCNV/ccRCC_GBM/ALIQUOT/infercnv.png"
+#FILE_PATHS[6]="integration_visualization/ccRCC_GBM/ALIQUOT/all_cnv_mosaic.png"
+#FILE_PATHS[7]="integration_visualization/ccRCC_GBM/ALIQUOT/tf_overlap_venn.png"
+#FILE_PATHS[8]="integration_visualization/ccRCC_GBM/ALIQUOT/tumor_cnv_mosaic.png"
+FILE_PATHS[9]="integration_GRN_CNV/ccRCC_GBM/ALIQUOT/zscore_cnv_boxplot.png"
+FILE_PATHS[10]="integration_GRN_CNV/ccRCC_GBM/ALIQUOT/zscore_cnv_violinplot.png"
 
 # Start SSH control master connection
 echo "Establishing SSH connection to $REMOTE_SERVER..."

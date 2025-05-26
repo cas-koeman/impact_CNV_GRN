@@ -260,13 +260,13 @@ class CNVRegulonAnalyzer:
                 for loom_cell_id, cnv_cell_id in cell_id_map.items():
                     # Get TF CNV status
                     tf_cnv = cnv_matrix.loc[tf_name, cnv_cell_id]
-                    tf_status = 'Gain' if tf_cnv > 0 else ('Loss' if tf_cnv < 0 else 'Neutral')
+                    tf_status = 'Gain' if tf_cnv > 1 else ('Loss' if tf_cnv < 1 else 'Neutral')
 
                     # Get target gene CNV status
                     for target_gene in target_genes_in_cnv:
                         total_cell_gene_pairs += 1
                         target_cnv = cnv_matrix.loc[target_gene, cnv_cell_id]
-                        target_status = 'Gain' if target_cnv > 0 else ('Loss' if target_cnv < 0 else 'Neutral')
+                        target_status = 'Gain' if target_cnv > 1 else ('Loss' if target_cnv < 1 else 'Neutral')
 
                         # Update both tables
                         full_contingency_table.loc[f"TF {tf_status}", f"Target {target_status}"] += 1
@@ -688,7 +688,15 @@ def main():
     # Configuration
     dataset_id = "ccRCC_GBM"
     sample_ids = [
-        "C3L-01313-T1_CPT0086820004"
+        "C3L-00004-T1_CPT0001540013",
+        "C3L-00026-T1_CPT0001500003",
+        "C3L-00088-T1_CPT0000870003",
+        "C3L-00416-T2_CPT0010100001",
+        "C3L-00448-T1_CPT0010160004",
+        "C3L-00917-T1_CPT0023690004",
+        "C3L-01313-T1_CPT0086820004",
+        "C3N-00317-T1_CPT0012280004",
+        "C3N-00495-T1_CPT0078510004"
     ]
 
     all_results = []

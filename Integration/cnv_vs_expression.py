@@ -57,24 +57,6 @@ class CNVExpressionAnalyzer:
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def load_and_process_loom(self) -> pd.DataFrame:
-        """
-        Load and process the loom file containing SCENIC regulon data.
-
-        Returns:
-            pd.DataFrame: AUC matrix for regulons across cells
-        """
-        with lp.connect(self.loom_file_path) as ds:
-            # Extract AUC values for each regulon across cells
-            auc_matrix = pd.DataFrame(
-                ds.ca.RegulonsAUC,
-                index=ds.ca.CellID,
-                columns=[reg.split('(')[0] for reg in ds.ca.RegulonsAUC_Genes]
-            )
-
-        print(f"Loaded regulon AUC matrix with shape: {auc_matrix.shape}")
-        return auc_matrix
-
     def analyze_expression_vs_cnv(self) -> None:
         """
         Analyze the relationship between copy number variations and gene expression.
@@ -85,7 +67,7 @@ class CNVExpressionAnalyzer:
         """
         # Load data matrices
         cnv_matrix = pd.read_csv(self.cnv_matrix_path, sep='\t', index_col=0)
-        cnv_matrix = cnv_matrix * 2 - 2  # Convert to copy number change relative to diploid
+        cnv_matrix = cnv_matrix # * 2 - 2  # Convert to copy number change relative to diploid
         raw_count_matrix = pd.read_csv(self.raw_count_matrix_path, sep='\t', index_col=0)
 
         print(f"CNV matrix dimensions: {cnv_matrix.shape}")
@@ -201,11 +183,9 @@ class CNVExpressionAnalyzer:
         Run the complete analysis pipeline in sequence.
 
         This function executes all analysis steps in the proper order:
-        1. Loading and processing the loom file
-        2. Analyzing expression vs CNV relationships
-        3. Creating visualizations
+        1. Analyzing expression vs CNV relationships
+        2. Creating visualizations
         """
-        self.load_and_process_loom()
         self.analyze_expression_vs_cnv()
         self.create_boxplot()
         self.create_violinplot()
@@ -226,7 +206,7 @@ def process_dataset(base_dir: str, dataset_id: str, aliquots: List[str]) -> None
 
         # Generate file paths
         loom_file_path = os.path.join(base_dir, "scGRNi/RNA/SCENIC", dataset_id, aliquot, "pyscenic_output.loom")
-        cnv_matrix_path = os.path.join(base_dir, "integration_GRN_CNV", dataset_id, aliquot, "cnv_matrix.tsv")
+        cnv_matrix_path = os.path.join(base_dir, "integration_GRN_CNV", dataset_id, aliquot, "extended_cnv_matrix.tsv")
         raw_count_path = os.path.join(base_dir, "integration_GRN_CNV", dataset_id, aliquot,
                                       "raw_count_matrix.txt")
 
@@ -263,15 +243,16 @@ if __name__ == "__main__":
 
     # List of aliquots to process
     ALIQUOTS = [
-        # "C3L-00004-T1_CPT0001540013",  # Commented out
-        "C3N-00495-T1_CPT0078510004",
-        "C3L-00917-T1_CPT0023690004",
-        "C3L-00088-T1_CPT0000870003",
+        "C3L-00004-T1_CPT0001540013",
         "C3L-00026-T1_CPT0001500003",
+        "C3L-00088-T1_CPT0000870003",
+        "C3L-00416-T2_CPT0010100001",
         "C3L-00448-T1_CPT0010160004",
+        "C3L-00917-T1_CPT0023690004",
         "C3L-01313-T1_CPT0086820004",
-        "C3L-00416-T2_CPT0010100001"
-    ]
+        "C3N-00317-T1_CPT0012280004",
+        "C3N-00495-T1_CPT0078510004"
+        ]
 
     # Run processing pipeline
     process_dataset(BASE_DIR, DATASET_ID, ALIQUOTS)

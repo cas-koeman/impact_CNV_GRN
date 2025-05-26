@@ -137,8 +137,8 @@ class DataLoader:
         """
         cnv_df = pd.read_csv(self.paths['cnv_matrix'], sep='\t', index_col=0)
         
-        # Convert CNV valuesm(centered at 0)
-        cnv_df = cnv_df * 2 - 2
+        # Convert CNV values
+        cnv_df = cnv_df 
         
         # Convert barcode format if needed (same as in expression data)
         cnv_df = cnv_df.T  # Transpose to have genes as rows and cells as columns
