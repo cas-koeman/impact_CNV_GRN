@@ -8,6 +8,7 @@ import pyreadr
 from scipy.stats import kruskal, zscore, chi2_contingency
 from statsmodels.graphics.mosaicplot import mosaic
 from typing import Dict, List, Optional, Tuple, Union, Any
+import argparse
 
 
 class SCENICDataLoader:
@@ -682,70 +683,67 @@ def process_sample(dataset_id: str, aliquot: str, base_dir: str = "/work/project
         traceback.print_exc()
         return None, []
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Run CNV-SCENIC analysis pipeline')
+    parser.add_argument('--dataset_id', type=str, required=True,
+                       help='Dataset ID (e.g., ccRCC_GBM)')
+    parser.add_argument('--sample_id', type=str, required=True,
+                       help='Sample ID to process (e.g., C3L-00004-T1_CPT0001540013)')
+    parser.add_argument('--base_dir', type=str, default="/work/project/ladcol_020",
+                       help='Base directory for data')
+    return parser.parse_args()
 
 def main():
-    """Run CNV-regulon relationship analysis pipeline."""
-    # Configuration
-    dataset_id = "ccRCC_GBM"
-    sample_ids = [
-        "C3L-00004-T1_CPT0001540013",
-        "C3L-00026-T1_CPT0001500003",
-        "C3L-00088-T1_CPT0000870003",
-        "C3L-00416-T2_CPT0010100001",
-        "C3L-00448-T1_CPT0010160004",
-        "C3L-00917-T1_CPT0023690004",
-        "C3L-01313-T1_CPT0086820004",
-        "C3N-00317-T1_CPT0012280004",
-        "C3N-00495-T1_CPT0078510004"
-    ]
+    """Main function modified to use command-line arguments."""
+    args = parse_arguments()
+    
+    print(f"\n{'=' * 80}")
+    print(f"PROCESSING SAMPLE: {args.sample_id}")
+    print(f"{'=' * 80}")
 
     all_results = []
-    analyzers = {}
+    
+    try:
+        # Load data
+        loader = SCENICDataLoader(base_dir=args.base_dir)
+        loader.load_all_data(dataset_id=args.dataset_id, aliquot=args.sample_id)
 
-    # Process each sample
-    for sample in sample_ids:
-        analyzer, sample_results = process_sample(dataset_id, sample)
-        if analyzer:
-            analyzers[sample] = analyzer
-            all_results.extend(sample_results)
+        # Create analyzer
+        analyzer = CNVRegulonAnalyzer(loader, sample_name=args.sample_id)
 
-    # Save aggregate results
+        # Analyze the whole tumor population
+        print("\n[Analysis] Whole tumor population")
+        tumor_cell_indices = loader.loom_data['tumor_cell_indices']
+        tumor_auc = loader.loom_data['regulons_auc'][tumor_cell_indices, :]
+        analyzer._analyze_population(tumor_auc, tumor_cell_indices.tolist(), "Tumor")
+
+        # Analyze tumor subclusters if available
+        if loader.tumor_subclusters is not None:
+            print("\n[Analysis] Tumor subclusters")
+            analyzer.analyze_subcluster_populations()
+
+        # Print summary and export results
+        analyzer.print_results_summary()
+        results = analyzer.export_results(args.dataset_id, args.sample_id)
+        analyzer.visualize_cnv_associations()
+        all_results.extend(results)
+
+    except Exception as e:
+        print(f"\n[Error] Processing sample {args.sample_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    # Save aggregate results (optional - only if you want to save per-sample results)
     if all_results:
         results_base = os.path.join(
-            "/work/project/ladcol_020",
+            args.base_dir,
             "residual_CNV",
-            dataset_id
+            args.dataset_id
         )
-        aggregate_file = os.path.join(results_base, "allresults_scenic_analysis.csv")
+        os.makedirs(results_base, exist_ok=True)
+        aggregate_file = os.path.join(results_base, f"{args.sample_id}_scenic_analysis.csv")
         pd.DataFrame(all_results).to_csv(aggregate_file, index=False)
-
-        # Print summary statistics
-        print("\n" + "=" * 80)
-        print("AGGREGATE RESULTS ACROSS ALL SAMPLES")
-        print("=" * 80)
-        self._print_aggregate_stats(all_results)
-
-    print("\n[Complete] Analysis pipeline finished")
-
-
-def _print_aggregate_stats(all_results: List[Dict]) -> None:
-    """Print aggregate statistics from all results."""
-    results_df = pd.DataFrame(all_results)
-
-    print("\nSummary of Chi-square test significance:")
-    print(results_df['significant'].value_counts())
-
-    print("\nSummary of Cramer's V (association strength):")
-    print(results_df['cramers_v'].describe())
-
-    # Print significant results
-    sig_results = results_df[results_df['significant']]
-    if not sig_results.empty:
-        print("\nSamples with significant associations:")
-        print(sig_results[['sample', 'population', 'analysis_type', 'p_value', 'cramers_v']])
-    else:
-        print("\nNo samples showed significant associations")
-
 
 if __name__ == "__main__":
     main()
