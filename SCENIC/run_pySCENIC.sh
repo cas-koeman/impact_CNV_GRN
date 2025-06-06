@@ -3,7 +3,7 @@
 #SBATCH --output=pySCENIC_pipeline.out
 #SBATCH -J pyscenic
 #SBATCH -p slim16
-#SBATCH --ntasks=4
+#SBATCH --ntasks=8
 #SBATCH --mem-per-cpu=64000
 
 # Load environment
@@ -17,10 +17,10 @@ conda activate pyscenic
 BASE_FOLDER="/work/project/ladcol_020/scGRNi/RNA/SCENIC/"
 DATA_FOLDER="/work/project/ladcol_020/datasets/"
 DATASET_ID="ccRCC_GBM/"
-SAMPLE_ID="C3L-00096-T1_CPT0001180011" #C3N-00495-T1_CPT0078510004 #C3L-00004-T1_CPT0001540013 #C3L-00917-T1_CPT0023690004
+SAMPLE_ID="C3L-00004-T1_CPT0001540013"
 
 # Define the values for CELL_TYPE and PRUNE to loop over
-CELL_TYPES=("None" "Tumor" "Non-Tumor")  # Use "None" instead of ""
+CELL_TYPES=("Tumor" "Non-Tumor")  # Use "None" instead of ""
 PRUNE_FLAGS=("None")      # Use "None" instead of ""
 
 # Loop over all combinations of CELL_TYPE and PRUNE

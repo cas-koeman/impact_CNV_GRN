@@ -1,16 +1,17 @@
+import os
+import loompy as lp
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import defaultdict
+
 def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
     """Compare regulons across samples using the main tumor-level regulon files
 
     This function uses the main Tumor_pyscenic_output.loom file for each sample instead of
     aggregating from subclusters, which avoids any duplication issues.
     """
-    import os
-    import loompy as lp
-    import pandas as pd
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    from collections import defaultdict
 
     base_scenic_dir = "/work/project/ladcol_020/scGRNi/RNA/SCENIC"
     sample_regulons = {}
@@ -78,6 +79,12 @@ def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
 
     correlation_df = pd.DataFrame(correlation_matrix, index=samples, columns=samples)
 
+    # Rename samples for better visualization
+    pretty_names = {sid: f"Run {i+1}" for i, sid in enumerate(samples)}
+    overlap_df.rename(index=pretty_names, columns=pretty_names, inplace=True)
+    similarity_df.rename(index=pretty_names, columns=pretty_names, inplace=True)
+    correlation_df.rename(index=pretty_names, columns=pretty_names, inplace=True)
+
     # Print results
     print("\nAbsolute Regulon Overlap Matrix Between Samples (Tumor-level):")
     print(overlap_df)
@@ -95,7 +102,7 @@ def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
 
     # Heatmap for absolute overlap
     plt.figure(figsize=(12, 10))
-    sns.heatmap(overlap_df, annot=True, fmt="d", cmap="YlOrRd")
+    sns.heatmap(overlap_df, annot=True, fmt="d", cmap="coolwarm")
     plt.title("Regulon Overlap Between Samples (Absolute Counts)", fontsize=14, pad=20)
     plt.tight_layout()
     plt.savefig(f"{output_prefix}_absolute_heatmap.pdf", bbox_inches='tight', dpi=300)
@@ -105,7 +112,7 @@ def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
     # Lower-triangle heatmap for Jaccard similarity
     mask = np.triu(np.ones_like(similarity_df, dtype=bool), k=1)
     fig, ax = plt.subplots(figsize=(10, 9))
-    sns.heatmap(similarity_df, mask=mask, annot=True, fmt=".3f", cmap="viridis", vmin=0, vmax=1,
+    sns.heatmap(similarity_df, mask=mask, annot=True, fmt=".3f", cmap="coolwarm", vmin=0, vmax=1,
                 cbar_kws={"orientation": "horizontal", "shrink": 0.6, "pad": 0.25, "label": "Jaccard index"}, ax=ax)
     plt.title("Regulon Similarity Between Samples", fontsize=14, pad=20)
     plt.xticks(rotation=45, ha='right')
@@ -118,7 +125,7 @@ def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
     # Lower-triangle heatmap for Pearson correlation
     mask = np.triu(np.ones_like(correlation_df, dtype=bool), k=1)
     fig, ax = plt.subplots(figsize=(10, 9))
-    sns.heatmap(correlation_df, mask=mask, annot=True, fmt=".3f", cmap="viridis", vmin=0, vmax=1,
+    sns.heatmap(correlation_df, mask=mask, annot=True, fmt=".3f", cmap="coolwarm", vmin=0, vmax=1,
                 cbar_kws={"orientation": "horizontal", "shrink": 0.6, "pad": 0.25, "label": "Pearson coefficient"}, ax=ax)
     plt.title("Regulon Correlation Between Samples", fontsize=14, pad=20)
     plt.xticks(rotation=45, ha='right')
@@ -135,19 +142,18 @@ def compare_tumor_level_regulons(sample_ids, dataset_id, output_base_dir):
 
 def main():
     """Run tumor-level regulon analysis across samples"""
-    dataset_id = "ccRCC_GBM"
-    output_base_dir = "/work/project/ladcol_020/integration_GRN_CNV/scenic_analysis/intertumor_comp"
+    dataset_id = "ccRCC_GBM/repr"
+    output_base_dir = "/work/project/ladcol_020/scGRNi/RNA/SCENIC/ccRCC_GBM/repr"
 
     sample_ids = [
-        "C3L-00004-T1_CPT0001540013",
-        "C3L-00026-T1_CPT0001500003",
-        "C3L-00088-T1_CPT0000870003",
-        "C3L-00416-T2_CPT0010100001",
-        "C3L-00448-T1_CPT0010160004",
-        "C3L-00917-T1_CPT0023690004",
-        "C3L-01313-T1_CPT0086820004",
-        "C3N-00317-T1_CPT0012280004",
-        "C3N-00495-T1_CPT0078510004"
+        "run_0",
+        "run_1",
+        "run_2",
+        "run_3",
+        "run_4",
+        "run_5",
+        "run_6",
+        "run_7",
     ]
 
     print(f"\n{'='*80}")

@@ -56,7 +56,7 @@ def merge_result_csvs(base_dir="/work/project/ladcol_020/integration_GRN_CNV/ccR
 def main():
     parser = argparse.ArgumentParser(description="Merge sample results CSV files into a single file.")
     parser.add_argument("--base_dir", type=str, 
-                        default="/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM",
+                        default="/work/project/ladcol_020/residual_CNV/ccRCC_GBM",
                         help="Base directory containing sample folders")
     parser.add_argument("--output", type=str, 
                         default="all_samples_results.csv",

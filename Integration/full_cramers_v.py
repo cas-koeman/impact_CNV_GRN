@@ -11,6 +11,7 @@ import os
 
 # Define file paths
 CRAMERS_V_FILE = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/all_samples_results.csv"
+CRAMERS_V_res_FILE = "/work/project/ladcol_020/residual_CNV/ccRCC_GBM/merged_subclusters_results.csv"
 OUTPUT_FILE = "/work/project/ladcol_020/integration_GRN_CNV/ccRCC_GBM/full_cramers_v_boxplot.png"
 
 def load_and_prepare_data():
@@ -33,18 +34,21 @@ def load_and_prepare_data():
 
 def create_boxplot_plot(plot_df):
     """Create the boxplot visualization with adjusted styling."""
+    print("\nCreating Cramér's V plot...")
+    
     sns.set_style("ticks")
     plt.figure(figsize=(16, 9))  # Slide-friendly dimensions
 
-    # Font sizes reduced ~30%
-    plt.rcParams['font.size'] = 12
-    plt.rcParams['axes.labelsize'] = 20
-    plt.rcParams['axes.titlesize'] = 14
-    plt.rcParams['xtick.labelsize'] = 14
-    plt.rcParams['ytick.labelsize'] = 14
-    plt.rcParams['legend.fontsize'] = 17
+    # Font sizes
+    plt.rcParams.update({
+        'font.size': 12,
+        'axes.labelsize': 24,
+        'xtick.labelsize': 18,
+        'ytick.labelsize': 18,
+        'legend.fontsize': 20
+    })
 
-    # Order samples by decreasing median Cramér’s V
+    # Order samples by decreasing median Cramér's V
     sample_order = (
         plot_df.groupby('Sample')['cramers_v']
         .median()
@@ -52,52 +56,60 @@ def create_boxplot_plot(plot_df):
         .index
     )
 
+    # Create boxplot
     ax = sns.boxplot(
         data=plot_df,
         x='Sample',
         y='cramers_v',
         color='white',
         width=0.6,
-        linewidth=1,
+        linewidth=1.5,
         fliersize=0,
         order=sample_order
     )
 
-    unique_subclusters = sorted(plot_df['Subcluster'].unique())
-    palette = sns.color_palette('coolwarm', n_colors=len(unique_subclusters))
-
+    # Add stripplot with subcluster colors
+    palette = sns.color_palette('coolwarm', n_colors=len(plot_df['Subcluster'].unique()))
     sns.stripplot(
         data=plot_df,
         x='Sample',
         y='cramers_v',
         hue='Subcluster',
         palette=palette,
-        size=8,
-        alpha=0.6,
+        size=10,
+        alpha=0.9,
         jitter=0.2,
         ax=ax,
         edgecolor='none',
         order=sample_order
     )
 
+    # Add reference lines
     ax.axhline(0.05, color='gray', linestyle='--', linewidth=1.5, alpha=0.3)
     ax.axhline(0.15, color='gray', linestyle='--', linewidth=1.5, alpha=0.3)
 
-    ax.set_ylabel("Cramer's V", labelpad=15)
+    # Style plot
+    ax.set_ylabel("Cramér's V", labelpad=15)
     ax.set_xlabel("")
-
     plt.xticks(rotation=45, ha='right', rotation_mode='anchor')
-    legend = plt.legend(bbox_to_anchor=(1, 0.6), loc='upper left', borderaxespad=0., frameon=False,)
+    
+    # Add legend
+    plt.legend(bbox_to_anchor=(1, 0.6), 
+               loc='upper left', 
+               borderaxespad=0., 
+               frameon=False,
+               title='Subcluster',
+               fontsize=18,
+               title_fontsize=20)
+
     sns.despine(top=True, right=True)
     plt.tight_layout()
 
-    try:
-        plt.savefig(OUTPUT_FILE, dpi=300, bbox_inches='tight')
-        print(f"Boxplot saved to:\n{OUTPUT_FILE}")
-    except Exception as e:
-        print(f"Error saving plot: {str(e)}")
-    finally:
-        plt.close()
+    # Save plot
+    output_path = os.path.join("full_cramers_v_plot.png")
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Saved to {output_path}")
+    plt.close()
 
 def main():
     print("Creating Cramér's V boxplot for subclusters...")

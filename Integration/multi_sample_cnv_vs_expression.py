@@ -1,16 +1,13 @@
 import os
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy import stats
 
-
 class MultiSampleCNVExpressionAnalyzer:
     def __init__(self, samples, cnv_dir, raw_count_dir):
-        """
-        Initialize the class with dataset names and directory paths.
+        """Initialize the class with dataset names and directory paths.
 
         Args:
             samples (list): List of dataset names.
@@ -23,8 +20,7 @@ class MultiSampleCNVExpressionAnalyzer:
         self.aggregated_results = []
 
     def _process_single_dataset(self, dataset):
-        """
-        Process a single dataset: filter raw counts, normalize, match genes and cells, and calculate mean z-scores per CNV state.
+        """Process a single dataset: filter raw counts, normalize, match genes and cells, and calculate mean z-scores per CNV state.
 
         Args:
             dataset (str): Name of the dataset.
@@ -39,11 +35,11 @@ class MultiSampleCNVExpressionAnalyzer:
         count_matrix_path = os.path.join(self.raw_count_dir, dataset, "residual_matrix.txt")
         # count_matrix_path = os.path.join(self.raw_count_dir, dataset, "raw_count_matrix.txt")
 
+
         print(f"Loading CNV matrix from: {cnv_matrix_path}")
         cnv_matrix = pd.read_csv(cnv_matrix_path, sep='\t', index_col=0)
         cnv_matrix = cnv_matrix 
         print(f"CNV matrix shape: {cnv_matrix.shape}")
-        # Add this after loading each CNV matrix
         print(f"Unique CNV values in {dataset}: {np.unique(cnv_matrix.values)}")
 
         print(f"Loading raw count matrix from: {count_matrix_path}")
@@ -88,15 +84,14 @@ class MultiSampleCNVExpressionAnalyzer:
             # Calculate mean z-score if there are values
             if len(z_scores) > 0:
                 mean_z_score = np.mean(z_scores)
-                results.append({'Dataset': dataset, 'CNV': cnv_state, 'Mean Z-score': mean_z_score})
-                print(f"CNV state {cnv_state}: Mean Z-score = {mean_z_score}")
+                gene_count = mask.sum().sum()  # Total number of gene-cell observations for this CNV state
+                results.append({'Dataset': dataset, 'CNV': cnv_state, 'Mean Z-score': mean_z_score, 'Gene Count': gene_count})
+                print(f"CNV state {cnv_state}: Mean Z-score = {mean_z_score} (from {gene_count} gene-cell observations)")
 
         return pd.DataFrame(results)
 
     def process_all_samples(self):
-        """
-        Process all samples and aggregate results into a single DataFrame.
-        """
+        """Process all samples and aggregate results into a single DataFrame."""
         print("\nStarting to process all samples...")
         for dataset in self.samples:
             print(f"\nProcessing dataset: {dataset}")
@@ -110,64 +105,95 @@ class MultiSampleCNVExpressionAnalyzer:
         print("All samples processed and results aggregated.")
 
     def plot_aggregated_scatter(self):
-        """
-        Create a scatterplot of mean Z-scores vs CNV for all samples, with jitter and a linear trendline.
-        """
+        """Create a scatterplot of mean Z-scores vs CNV for all samples, with jitter and a linear trendline."""
         print("\nCreating scatterplot with trendline...")
-        plt.figure(figsize=(12, 8))
+        
+        # Set consistent styling
+        sns.set_style("ticks")
+        plt.rcParams.update({
+            'font.size': 12,
+            'axes.labelsize': 24,
+            'xtick.labelsize': 18,
+            'ytick.labelsize': 18,
+            'legend.fontsize': 20
+        })
+
+        # Create figure
+        plt.figure(figsize=(16, 9))
+
+        # Clean up sample names by removing everything after underscore
+        self.aggregated_results_df['Dataset_clean'] = self.aggregated_results_df['Dataset'].str.split('_').str[0]
+
+        # Filter data to only include CNV values between 0.5 and 2
+        filtered_df = self.aggregated_results_df[
+            (self.aggregated_results_df['CNV'] >= 0.5) & 
+            (self.aggregated_results_df['CNV'] <= 2)
+        ]
 
         # Define a jitter function to add random noise
         def jitter(values, j):
             return values + np.random.normal(j, 0.05, values.shape)
 
         # Add jitter to the x-axis
-        self.aggregated_results_df['CNV_jittered'] = jitter(self.aggregated_results_df['CNV'].astype(float), 0.05)
+        filtered_df['CNV_jittered'] = jitter(filtered_df['CNV'].astype(float), 0.05)
 
-        # Create the scatterplot
-        ax = sns.scatterplot(
-            x='CNV_jittered',
-            y='Mean Z-score',
-            hue='Dataset',  # Color by dataset
-            data=self.aggregated_results_df,
-            palette='coolwarm',  # Use a color palette
-            s=100,  # Adjust the size of the dots
-            alpha=0.6  # Add transparency
+        # Define colors using coolwarm colormap
+        unique_samples = filtered_df['Dataset_clean'].unique()
+        sample_colors = plt.cm.coolwarm(np.linspace(0, 1, len(unique_samples)))
+        color_dict = dict(zip(unique_samples, sample_colors))
+
+        # Create the base scatterplot using cleaned names
+        for sample, group in filtered_df.groupby('Dataset_clean'):
+            plt.scatter(
+                x=group['CNV_jittered'],
+                y=group['Mean Z-score'],
+                s=100,
+                alpha=0.8,
+                color=color_dict[sample],
+                edgecolor='white',
+                label=sample
+            )
+
+        # Add regression line using sns.regplot
+        sns.regplot(
+            x=filtered_df['CNV'].astype(float),
+            y=filtered_df['Mean Z-score'],
+            scatter=False,  # We already have our custom scatter points
+            ci=95,
+            line_kws={'color': '#cfcfcf', 'linewidth': 2.5},
+            scatter_kws={'alpha': 0},  # Make scatter points invisible
+            truncate=False
         )
 
-        # Add linear regression line
-        x = self.aggregated_results_df['CNV'].astype(float)
-        y = self.aggregated_results_df['Mean Z-score']
+        # Calculate and display R² value
+        x = filtered_df['CNV'].astype(float)
+        y = filtered_df['Mean Z-score']
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
         r_squared = r_value ** 2
-        print(f"R² value: {r_squared:.3f}")
+        print(f"R² value (0.5-2 CNV range): {r_squared:.3f}")
         print(f"Slope: {slope:.3f}, Intercept: {intercept:.3f}")
 
-        x_min, x_max = 0.5, x.max()
-        x_line = np.linspace(x_min, x_max, 100)
-        y_line = slope * x_line + intercept
-        plt.plot(x_line, y_line, color='black', linewidth=1, linestyle="--", label='_nolegend_', alpha=0.2)
-
-        # Add R² value
+        # Add R² value to plot
         plt.text(0.8, 0.1, f'R² = {r_squared:.3f}', transform=plt.gca().transAxes,
                 fontsize=18, verticalalignment='top')
 
         # Set x and y limits and ticks
-        plt.xlim(-0.2, 3.2)
+        plt.xlim(0.4, 2.1)
         plt.ylim(-0.2, 0.5)
-        plt.xticks([0, 0.5, 1, 1.5, 2, 3], fontsize=14)
-        plt.yticks(fontsize=14)
+        plt.xticks([0.5, 1.0, 1.5, 2.0], fontsize=18)
+        plt.yticks(fontsize=18)
 
         # Remove top and right spines
         sns.despine()
 
         # Axis labels with correct font size
-        plt.xlabel('Copy Number Variation (CNV)', fontsize=20)
-        plt.ylabel('Mean Z-score of Gene Expression', fontsize=20)
+        plt.xlabel('Copy Number Variation (CNV)', labelpad=10)
+        plt.ylabel('Mean Z-score of Gene Expression', labelpad=10)
 
-        # Move legend outside the plot
-        plt.legend(loc='upper left', fontsize=10, frameon=False)
+        # Move legend outside the plot and use cleaned names
+        plt.legend(loc='upper left', fontsize=14, frameon=False, title='Sample', title_fontsize=18)
 
-        plt.tight_layout()
+        plt.tight_layout(pad=3.0)
         plt.savefig('zscore_cnv_scatter_all_samples.png', dpi=300, bbox_inches='tight')
         plt.close()
         print("Scatterplot with trendline saved as 'zscore_cnv_scatter_all_samples.png'.")
